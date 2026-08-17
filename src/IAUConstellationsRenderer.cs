@@ -6,7 +6,6 @@ using System.Globalization;
 namespace StellariumCatalog;
 
 internal static class IAUConstellationsRenderer {
-    private static readonly ImColor8 white = new ImColor8(255, 255, 255, 255);
     private static readonly List<Segment> segments = new();
 
     public static void Init() {
@@ -24,22 +23,17 @@ internal static class IAUConstellationsRenderer {
 
     public static void Draw(ImDrawListPtr draw_list, Camera camera, double3 center, double radius) {
         double3 centerD = new double3(center.X, center.Y, center.Z);
+        ImColor8 lineColor = StellariumRenderer.ToLineColor(StellariumRenderer.iauLineColor, StellariumRenderer.iauLineOpacity);
 
         foreach(Segment segment in segments) {
-            double3 mirroredA = StarDirectionConverter.MirrorForGameSkybox(segment.A);
-            double3 mirroredB = StarDirectionConverter.MirrorForGameSkybox(segment.B);
-
-            double3 correctedA = StarDirectionConverter.RotateConstellationToGameSky(mirroredA);
-            double3 correctedB = StarDirectionConverter.RotateConstellationToGameSky(mirroredB);
-
-            double3 a = centerD + correctedA * radius;
-            double3 b = centerD + correctedB * radius;
+            double3 a = centerD + StellariumRenderer.ApplyAlignment(segment.A) * radius;
+            double3 b = centerD + StellariumRenderer.ApplyAlignment(segment.B) * radius;
 
             ImDrawListExtensions.AddLine(
                 draw_list,
                 camera.EgoToScreen(a),
                 camera.EgoToScreen(b),
-                white,
+                lineColor,
                 2f);
         }
     }

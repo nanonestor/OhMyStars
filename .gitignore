@@ -1,0 +1,5 @@
+bin/
+obj/
+
+# Local machine-specific overrides (e.g. KSAGameDir), never committed
+src/StellariumCatalog.csproj.user.props

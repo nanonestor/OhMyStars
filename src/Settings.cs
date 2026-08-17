@@ -28,7 +28,7 @@ internal static class StellariumCatalogSettingsStore {
             return;
         }
         
-        _store.Load();
+        _store!.Load();
         _current = _store.GetCurrent(saveId).Clone();
     }
 
@@ -38,7 +38,7 @@ internal static class StellariumCatalogSettingsStore {
         if(string.IsNullOrEmpty(saveId))
             return;
 
-        _store.Set(saveId, _current.Clone());
+        _store!.Set(saveId, _current.Clone());
         _store.Save(saveId);
     }
 
@@ -70,12 +70,12 @@ internal static class StellariumCatalogSettingsStore {
 
     public static void Load() {
         EnsureInitialized();
-        _store.Load();
+        _store!.Load();
     }
 
     public static void Save() {
         EnsureInitialized();
-        _store.Save();
+        _store!.Save();
     }
 }
 

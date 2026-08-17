@@ -12,7 +12,8 @@ public record ConstellationName(string NativeName, string EnglishName);
 public readonly record struct Star(
     int Hip,
     double RaHours,
-    double DecDegrees);
+    double DecDegrees,
+    string Name = "");
 
 public class SkyCulture {
     public string Name { get; init; } = "";
@@ -51,10 +52,17 @@ public static class SkyCulturesRenderer {
     private static readonly Dictionary<int, double3> hipToDirection = new();
     private static readonly List<ResolvedConstellationSegment> resolvedSegments = new();
     private static readonly List<ResolvedConstellationLabel> resolvedLabels = new();
+// Dictionary to store named stars containing their Hipparcos number and corresponding combined name for later use in the UI.
+    private static readonly Dictionary<int, Star> hipToStar = new();
+    private static readonly List<ResolvedNamedStar> resolvedNamedStars = new();
 
     public readonly record struct ResolvedConstellationSegment(double3 A, double3 B);
     public readonly record struct ResolvedConstellationLabel(
         string Text,
+        double3 Direction);
+
+    public readonly record struct ResolvedNamedStar(
+        string Name,
         double3 Direction);
 
     public static void Init() {
@@ -86,32 +94,31 @@ public static class SkyCulturesRenderer {
         ResolveSegments();
     }
 
-    public static void Draw(ImDrawListPtr draw_list, Camera camera, double3 center, double radius, bool showAsterisms, bool showAsterismNames) {
+    public static void Draw(ImDrawListPtr draw_list, Camera camera, double3 center, double radius, bool showAsterisms, bool showAsterismNames, bool showStarNames) {
         if(showAsterisms)
             DrawAsterisms(draw_list, camera, center, radius);
 
         if(showAsterismNames)
             DrawAsterismNames(draw_list, camera, center, radius);
+
+        if(showStarNames)
+            DrawStarNames(draw_list, camera, center, radius);
     }
 
 
     public static void DrawAsterisms(ImDrawListPtr draw_list, Camera camera, double3 center, double radius) {
+        ImColor8 lineColor = StellariumRenderer.ToLineColor(StellariumRenderer.asterismLineColor, StellariumRenderer.asterismLineOpacity);
+
         foreach(ResolvedConstellationSegment segment in resolvedSegments) {
-            double3 mirroredA = StarDirectionConverter.MirrorForGameSkybox(segment.A);
-            double3 mirroredB = StarDirectionConverter.MirrorForGameSkybox(segment.B);
-
-            double3 correctedA = StarDirectionConverter.RotateConstellationToGameSky(mirroredA);
-            double3 correctedB = StarDirectionConverter.RotateConstellationToGameSky(mirroredB);
-
-            double3 a = center + correctedA * radius;
-            double3 b = center + correctedB * radius;
+            double3 a = center + StellariumRenderer.ApplyAlignment(segment.A) * radius;
+            double3 b = center + StellariumRenderer.ApplyAlignment(segment.B) * radius;
 
 
             ImDrawListExtensions.AddLine(
                 draw_list,
                 camera.EgoToScreen(a),
                 camera.EgoToScreen(b),
-                white,
+                lineColor,
                 2f);
         }
     }
@@ -123,10 +130,7 @@ public static class SkyCulturesRenderer {
         double radius) {
 
         foreach(ResolvedConstellationLabel label in resolvedLabels) {
-            double3 mirrored = StarDirectionConverter.MirrorForGameSkybox(label.Direction);
-            double3 corrected = StarDirectionConverter.RotateConstellationToGameSky(mirrored);
-
-            double3 position = center + corrected * radius;
+            double3 position = center + StellariumRenderer.ApplyAlignment(label.Direction) * radius;
 
             float2 screen = camera.EgoToScreen(position);
 
@@ -135,6 +139,30 @@ public static class SkyCulturesRenderer {
                 screen,
                 white,
                 label.Text);
+        }
+    }
+
+    public static void DrawStarNames(
+        // Draws the names of all of the stars with recorded hip numbers in the dictionary of named stars (hipToStar) that are part of the currently active sky culture's asterisms. This is done by iterating through the resolved segments of the asterisms and checking if either endpoint of each segment corresponds to a named star. If so, the star's name is drawn at its corresponding position on the screen.
+        ImDrawListPtr draw_list,
+        Camera camera,
+        double3 center,
+        double radius) {
+        foreach(ResolvedNamedStar namedStar in hipToStar.Values.Select(star => new ResolvedNamedStar(star.Name, hipToDirection[star.Hip])).Where(namedStar => resolvedSegments.Any(segment => segment.A == namedStar.Direction || segment.B == namedStar.Direction))) {
+            if(namedStar.Name == null || namedStar.Name.Trim().Length == 0)
+                continue;
+
+            double3 position = center + StellariumRenderer.ApplyAlignment(namedStar.Direction) * radius;
+            // Adds a little bit of an offset to the right/down of where the name will be drawn
+            position += new double3(0, 0, 0);
+
+            float2 screen = camera.EgoToScreen(position);
+
+            ImDrawListExtensions.AddText(
+                draw_list,
+                screen,
+                white,
+                namedStar.Name);
         }
     }
 
@@ -169,7 +197,7 @@ public static class SkyCulturesRenderer {
             if(labelStarHips.Count == 0)
                 continue;
 
-            if(!culture.ConstellationNames.TryGetValue(constellationId, out ConstellationName name))
+            if(!culture.ConstellationNames.TryGetValue(constellationId, out ConstellationName? name) || name is null)
                 continue;
 
             double3 sum = default;
@@ -206,6 +234,7 @@ public static class SkyCulturesRenderer {
         }
     }
 
+
     public static void SetStars(IEnumerable<Star> stars) {
         hipToDirection.Clear();
 
@@ -217,6 +246,10 @@ public static class SkyCulturesRenderer {
                 StarDirectionConverter.RaDecToDirection(
                     star.RaHours,
                     star.DecDegrees);
+            // If the star has a non-empty combined name, store it in the hipToStar dictionary for later use in the UI.
+            if(!string.IsNullOrWhiteSpace(star.Name)) {
+                hipToStar[star.Hip] = star;
+            }
         }
     }
 
@@ -238,6 +271,9 @@ public static class SkyCulturesRenderer {
         int hipIndex = Array.IndexOf(headers, "hip");
         int raIndex = Array.IndexOf(headers, "ra");
         int decIndex = Array.IndexOf(headers, "dec");
+        int bfIndex = Array.IndexOf(headers, "bf");
+        int properIndex = Array.IndexOf(headers, "proper");
+        
 
         if(hipIndex < 0 || raIndex < 0 || decIndex < 0)
             return stars;
@@ -285,7 +321,21 @@ public static class SkyCulturesRenderer {
                 continue;
             }
 
-            stars.Add(new Star(hip, raHours, decDegrees));
+            // If either the bf or proper name fields are non-empty store them in the dictionary for the entry for later use in the UI. This is not strictly necessary for the rendering of the asterisms, but it can be useful for displaying star names in the UI.
+            // Stores them in one combined entry with a separator - with proper name first if available, then bf name if available. If both are empty, the entry will be an empty string.
+            string bfName = bfIndex >= 0 && bfIndex < parts.Length ? parts[bfIndex] : "";
+            string properName = properIndex >= 0 && properIndex < parts.Length ? parts[properIndex] : "";
+            string combinedName = !string.IsNullOrWhiteSpace(properName) ? properName : bfName;
+            if(!string.IsNullOrWhiteSpace(combinedName)) {
+                // Store the combined name in a dictionary for later use in the UI. This is not strictly necessary for the rendering of the asterisms, but it can be useful for displaying star names in the UI.
+                // For example, you could have a dictionary like Dictionary<int, string> hipToName = new Dictionary<int, string>(); and then store the combined name like this:
+                // hipToName[hip] = combinedName;
+            }
+            // now adds the star to the list of stars to be used for rendering the asterisms, which also stores the combined name in a dictionary for later use in the UI.
+            stars.Add(new Star(hip, raHours, decDegrees, combinedName));
+
+
+
         }
 
         return stars;
@@ -353,7 +403,7 @@ public static class SkyCulturesRenderer {
 
             LoadConstellationShipFile(shipFile, culture);
 
-            string namesFile = Path.Combine(cultureDir, "constellation_names.eng.fab");
+            string? namesFile = Path.Combine(cultureDir, "constellation_names.eng.fab");
 
             if(!File.Exists(namesFile)) {
                 namesFile = Directory

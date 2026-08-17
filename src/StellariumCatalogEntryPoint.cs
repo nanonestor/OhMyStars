@@ -19,33 +19,19 @@ public class StellariumCatalogEntryPoint {
         SaveLoadObserver.ApplyPatches(_harmony);
 
         StellariumRenderer.Init();
+        StellariumCatalogWindow.LoadSettings();
     }
 
     [ModMenuEntry("StellariumCat...")]
     public static void DrawMenu() {
-        ImGui.Checkbox("IAU Constellations", ref StellariumRenderer.showIAUConstellations);
-
-        ImGui.Separator();
-
-        ImGui.Checkbox("Show Asterisms", ref StellariumRenderer.showAsterisms);
-        ImGui.Checkbox("Show Names", ref StellariumRenderer.showAsterismNames);
-
-        if(ImGui.BeginMenu("Sky Cultures")) {
-
-            for(int i = 0; i < SkyCulturesRenderer.SkyCultures.Count; i++) {
-                SkyCulture skyCulture = SkyCulturesRenderer.SkyCultures[i];
-
-                bool selected = i == SkyCulturesRenderer.ActiveSkyCultureIndex;
-
-                if(ImGui.MenuItem(
-                    selected ? $"✓ {skyCulture.Name}" : skyCulture.Name)) {
-                    SkyCulturesRenderer.ActiveSkyCultureIndex = i;
-
-                }
-            }
-
-            ImGui.EndMenu();
+        if(ImGui.MenuItem("Open Window")) {
+            StellariumCatalogWindow.ToggleWindow();
         }
+    }
+
+    [StarMapBeforeGui]
+    public static void OnBeforeGui(double dt) {
+        StellariumCatalogWindow.Draw();
     }
 
     [StarMapAfterGui]

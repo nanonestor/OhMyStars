@@ -147,33 +147,45 @@ public static class EgoTransform {
 
 public static class StarDirectionConverter {
     public static double3 RaDecToDirection(double raHours, double decDegrees) {
-        double offsetHours = -6;
-        double ra = (raHours + offsetHours) * System.Math.PI / 12.0;
+        double ra = raHours * System.Math.PI / 12.0;
         double dec = decDegrees * System.Math.PI / 180.0;
 
         double cosDec = System.Math.Cos(dec);
 
         // J2000 equatorial direction
-        double3 eq = new double3(
-            System.Math.Cos(ra) * cosDec,
-            System.Math.Sin(ra) * cosDec,
-            System.Math.Sin(dec)
-        );
+        double x = System.Math.Cos(ra) * cosDec;
+        double y = System.Math.Sin(ra) * cosDec;
+        double z = System.Math.Sin(dec);
 
-        return eq;
+        // Rotate by -obliquity around X, matching the star catalog's equatorial-to-ecliptic conversion
+        const double obliquityRadians = -23.439281 * System.Math.PI / 180.0;
+        double cosObliquity = System.Math.Cos(obliquityRadians);
+        double sinObliquity = System.Math.Sin(obliquityRadians);
+        double yRotated = y * cosObliquity - z * sinObliquity;
+        double zRotated = y * sinObliquity + z * cosObliquity;
+
+        return new double3(x, yRotated, zRotated);
     }
 
+    private static readonly double3 XAxis = new double3(1.0, 0.0, 0.0);
+    private static readonly double3 YAxis = new double3(0.0, 1.0, 0.0);
+    private static readonly double3 ZAxis = new double3(0.0, 0.0, 1.0);
 
+    // User-adjustable fine-alignment rotation (degrees) applied on top of the ecliptic conversion above,
+    // to compensate for any residual offset between this mod's lines and the game's own star field.
+    public static double3 ApplyFineAlignment(double3 v, double xDegrees, double yDegrees, double zDegrees) {
+        if(xDegrees != 0.0) {
+            v = VectorMath.RotateAroundAxis(v, XAxis, xDegrees * System.Math.PI / 180.0);
+        }
 
+        if(yDegrees != 0.0) {
+            v = VectorMath.RotateAroundAxis(v, YAxis, yDegrees * System.Math.PI / 180.0);
+        }
 
-    public static double3 MirrorForGameSkybox(double3 v) {
-        return new double3(-v.X, v.Y, v.Z);
-    }
+        if(zDegrees != 0.0) {
+            v = VectorMath.RotateAroundAxis(v, ZAxis, zDegrees * System.Math.PI / 180.0);
+        }
 
-    public static double3 RotateConstellationToGameSky(double3 v) {
-        double3 from = new double3(0, 0, 1);
-        double3 to = new double3(0, 1, 0);
-        double3 aligned = VectorMath.RotateFromTo(v, from, to);
-        return VectorMath.RotateAroundAxis(aligned, to, System.Math.PI / 2d);
+        return v;
     }
 }
