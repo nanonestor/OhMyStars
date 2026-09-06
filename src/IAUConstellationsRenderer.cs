@@ -3,7 +3,7 @@ using Brutal.Numerics;
 using KSA;
 using System.Globalization;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 internal static class IAUConstellationsRenderer {
     private static readonly List<Segment> segments = new();
@@ -15,7 +15,7 @@ internal static class IAUConstellationsRenderer {
             "My Games",
             "Kitten Space Agency",
             "mods",
-            "StellariumCatalog",
+            "OhMyStars",
             "lines_in_20.txt");
 
         LoadConstellationLines(lines_in_20_path);
@@ -29,10 +29,17 @@ internal static class IAUConstellationsRenderer {
             double3 a = centerD + StellariumRenderer.ApplyAlignment(segment.A) * radius;
             double3 b = centerD + StellariumRenderer.ApplyAlignment(segment.B) * radius;
 
+            double3 midpoint = (a + b) * 0.5d;
+            if(!StellariumRenderer.IsVisibleFromCamera(a) ||
+                !StellariumRenderer.IsVisibleFromCamera(midpoint) ||
+                !StellariumRenderer.IsVisibleFromCamera(b)) {
+                continue;
+            }
+
             ImDrawListExtensions.AddLine(
                 draw_list,
-                camera.EgoToScreen(a),
-                camera.EgoToScreen(b),
+                StellariumRenderer.EgoToOverlayScreen(camera, a),
+                StellariumRenderer.EgoToOverlayScreen(camera, b),
                 lineColor,
                 2f);
         }

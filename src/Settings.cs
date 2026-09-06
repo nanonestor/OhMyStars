@@ -1,19 +1,19 @@
 ﻿using Brutal.Numerics;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
-public sealed class StellariumCatalogSettings {
+public sealed class OhMyStarsSettings {
 
-    public StellariumCatalogSettings Clone() {
-        return new StellariumCatalogSettings {
+    public OhMyStarsSettings Clone() {
+        return new OhMyStarsSettings {
         };
     }
 }
-internal static class StellariumCatalogSettingsStore {
-    private static SaveScopedSettingsStore<StellariumCatalogSettings>? _store;
-    private static StellariumCatalogSettings _current = new();
+internal static class OhMyStarsSettingsStore {
+    private static SaveScopedSettingsStore<OhMyStarsSettings>? _store;
+    private static OhMyStarsSettings _current = new();
 
-    public static StellariumCatalogSettings Current {
+    public static OhMyStarsSettings Current {
         get {
             EnsureInitialized();
             return _current;
@@ -24,7 +24,7 @@ internal static class StellariumCatalogSettingsStore {
         EnsureInitialized();
         
         if(string.IsNullOrEmpty(saveId)) {
-            _current = new StellariumCatalogSettings();
+            _current = new OhMyStarsSettings();
             return;
         }
         
@@ -43,12 +43,12 @@ internal static class StellariumCatalogSettingsStore {
     }
 
     public static void SetCurrentFromDefaults() {
-        _current = new StellariumCatalogSettings();
+        _current = new OhMyStarsSettings();
     }
 
     private static void EnsureInitialized() {
         if(_store == null)
-            throw new InvalidOperationException("StellariumCatalogSettingsStore.Init() must be called before use.");
+            throw new InvalidOperationException("OhMyStarsSettingsStore.Init() must be called before use.");
     }
 
     public static void Init() {
@@ -60,12 +60,12 @@ internal static class StellariumCatalogSettingsStore {
             "Kitten Space Agency",
             "saves");
 
-        _store = new SaveScopedSettingsStore<StellariumCatalogSettings>(
+        _store = new SaveScopedSettingsStore<OhMyStarsSettings>(
             savesDir,
-            "StellariumCatalog_settings.toml",
-            () => new StellariumCatalogSettings(),
-            StellariumCatalogSettingsToml.Read,
-            StellariumCatalogSettingsToml.Write);
+            "OhMyStars_settings.toml",
+            () => new OhMyStarsSettings(),
+            OhMyStarsSettingsToml.Read,
+            OhMyStarsSettingsToml.Write);
     }
 
     public static void Load() {
@@ -79,9 +79,9 @@ internal static class StellariumCatalogSettingsStore {
     }
 }
 
-internal static class StellariumCatalogSettingsToml {
-    public static StellariumCatalogSettings Read(SettingsBlock block) {
-        var s = new StellariumCatalogSettings();
+internal static class OhMyStarsSettingsToml {
+    public static OhMyStarsSettings Read(SettingsBlock block) {
+        var s = new OhMyStarsSettings();
 
         return s;
     }
@@ -89,7 +89,7 @@ internal static class StellariumCatalogSettingsToml {
     public static void Write(
         SettingsBlockWriter writer,
         string saveId,
-        StellariumCatalogSettings s) {
+        OhMyStarsSettings s) {
 
         writer.EndBlock();
     }

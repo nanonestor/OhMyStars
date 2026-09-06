@@ -4,16 +4,25 @@ using KSA;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 public record ConstellationSegment(int FromHip, int ToHip);
 public record ConstellationName(string NativeName, string EnglishName);
-
-public readonly record struct Star(
+public readonly record struct StarInformation(
     int Hip,
-    double RaHours,
-    double DecDegrees,
-    string Name = "");
+    string DisplayName,
+    string Bayer,
+    string RightAscension,
+    string Declination,
+    string Magnitude,
+    string AbsoluteMagnitude,
+    string SpectralType,
+    string Distance);
+
+public readonly record struct ConstellationInformation(
+    string Id,
+    string Name,
+    IReadOnlyList<StarInformation> Stars);
 
 public class SkyCulture {
     public string Name { get; init; } = "";
@@ -22,7 +31,7 @@ public class SkyCulture {
 }
 
 public static class SkyCulturesRenderer {
-    private static  List<SkyCulture> _skyCultures = new();
+    private static readonly List<SkyCulture> _skyCultures = new();
 
     public static IReadOnlyList<SkyCulture> SkyCultures => _skyCultures;
 
@@ -47,14 +56,54 @@ public static class SkyCulturesRenderer {
             ? _skyCultures[_activeSkyCultureIndex]
             : null;
 
+    public static IReadOnlyList<ConstellationInformation> GetActiveConstellationInformation() {
+        SkyCulture? culture = ActiveSkyCulture;
+        if(culture == null)
+            return Array.Empty<ConstellationInformation>();
+
+        List<ConstellationInformation> constellations = new(culture.Constellations.Count);
+        foreach(KeyValuePair<string, List<ConstellationSegment>> entry in culture.Constellations.OrderBy(entry => entry.Key)) {
+            HashSet<int> starHips = new();
+            foreach(ConstellationSegment segment in entry.Value) {
+                starHips.Add(segment.FromHip);
+                starHips.Add(segment.ToHip);
+            }
+
+            List<StarInformation> stars = new(starHips.Count);
+            foreach(int hip in starHips) {
+                if(hipToInformation.TryGetValue(hip, out StarInformation information)) {
+                    stars.Add(information);
+                }
+            }
+
+            stars.Sort((left, right) => string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase));
+            string name = culture.ConstellationNames.TryGetValue(entry.Key, out ConstellationName? constellationName)
+                ? (!string.IsNullOrWhiteSpace(constellationName.EnglishName)
+                    ? constellationName.EnglishName
+                    : constellationName.NativeName)
+                : entry.Key;
+
+            constellations.Add(new ConstellationInformation(entry.Key, name, stars));
+        }
+
+        return constellations;
+    }
+
+    public static bool TryGetStarDirection(int hip, out double3 direction) {
+        return hipToDirection.TryGetValue(hip, out direction);
+    }
+
     private static readonly ImColor8 white = new ImColor8(255, 255, 255, 255);
 
     private static readonly Dictionary<int, double3> hipToDirection = new();
     private static readonly List<ResolvedConstellationSegment> resolvedSegments = new();
     private static readonly List<ResolvedConstellationLabel> resolvedLabels = new();
-// Dictionary to store named stars containing their Hipparcos number and corresponding combined name for later use in the UI.
-    private static readonly Dictionary<int, Star> hipToStar = new();
+    private static readonly Dictionary<int, string> hipToName = new();
+    private static readonly Dictionary<int, StarInformation> hipToInformation = new();
     private static readonly List<ResolvedNamedStar> resolvedNamedStars = new();
+    private static readonly HashSet<StarDirectionKey> renderedStarDirections = new();
+
+    private readonly record struct StarDirectionKey(int X, int Y, int Z);
 
     public readonly record struct ResolvedConstellationSegment(double3 A, double3 B);
     public readonly record struct ResolvedConstellationLabel(
@@ -73,24 +122,24 @@ public static class SkyCulturesRenderer {
             "My Games",
             "Kitten Space Agency",
             "mods",
-            "StellariumCatalog",
+            "OhMyStars",
             "skycultures");
 
-        string hygPath = Path.Combine(
+        string catalogPath = Path.Combine(
             userDocs,
             "My Games",
             "Kitten Space Agency",
             "mods",
-            "StellariumCatalog",
-            "hyg_v42.csv");
+            "OhMyStars",
+            "athyg_32_reduced_m10.csv");
 
 
+        LoadRenderedStarDirections();
         LoadSkyCultures(skyculturesPath);
 
         _activeSkyCultureIndex = 29;
 
-        List<Star> stars = LoadHygStars(hygPath);
-        SetStars(stars);
+        LoadCatalog(catalogPath);
         ResolveSegments();
     }
 
@@ -113,13 +162,29 @@ public static class SkyCulturesRenderer {
             double3 a = center + StellariumRenderer.ApplyAlignment(segment.A) * radius;
             double3 b = center + StellariumRenderer.ApplyAlignment(segment.B) * radius;
 
+            double3 midpoint = (a + b) * 0.5d;
+            if((camera.IsPointWithinFov(a) || camera.IsPointWithinFov(b) || camera.IsPointWithinFov(center)) &&
+                StellariumRenderer.IsVisibleFromCamera(a) &&
+                StellariumRenderer.IsVisibleFromCamera(midpoint) &&
+                StellariumRenderer.IsVisibleFromCamera(b)) {
+                ImDrawListExtensions.AddLine(
+                    draw_list,
+                    StellariumRenderer.EgoToOverlayScreen(camera, a),
+                    StellariumRenderer.EgoToOverlayScreen(camera, b),
+                    lineColor,
+                    2f);
+            }
 
-            ImDrawListExtensions.AddLine(
-                draw_list,
-                camera.EgoToScreen(a),
-                camera.EgoToScreen(b),
-                lineColor,
-                2f);
+
+                            // if (camera.IsPointWithinFov(a) || camera.IsPointWithinFov(b)) {
+            //     ImDrawListExtensions.AddLine(
+            //         draw_list,
+            //         camera.EclToScreen(a),
+            //         camera.EclToScreen(b),
+            //         lineColor,
+            //         2f);
+            // }
+
         }
     }
 
@@ -132,8 +197,14 @@ public static class SkyCulturesRenderer {
         foreach(ResolvedConstellationLabel label in resolvedLabels) {
             double3 position = center + StellariumRenderer.ApplyAlignment(label.Direction) * radius;
 
-            float2 screen = camera.EgoToScreen(position);
+            float2 screen = StellariumRenderer.EgoToOverlayScreen(camera, position);
 
+            if (!camera.IsPointWithinFov(position)) {
+                continue;
+            }
+            if(!StellariumRenderer.IsVisibleFromCamera(position)) {
+                continue;
+            }
             ImDrawListExtensions.AddText(
                 draw_list,
                 screen,
@@ -143,21 +214,20 @@ public static class SkyCulturesRenderer {
     }
 
     public static void DrawStarNames(
-        // Draws the names of all of the stars with recorded hip numbers in the dictionary of named stars (hipToStar) that are part of the currently active sky culture's asterisms. This is done by iterating through the resolved segments of the asterisms and checking if either endpoint of each segment corresponds to a named star. If so, the star's name is drawn at its corresponding position on the screen.
         ImDrawListPtr draw_list,
         Camera camera,
         double3 center,
         double radius) {
-        foreach(ResolvedNamedStar namedStar in hipToStar.Values.Select(star => new ResolvedNamedStar(star.Name, hipToDirection[star.Hip])).Where(namedStar => resolvedSegments.Any(segment => segment.A == namedStar.Direction || segment.B == namedStar.Direction))) {
-            if(namedStar.Name == null || namedStar.Name.Trim().Length == 0)
-                continue;
-
+        foreach(ResolvedNamedStar namedStar in resolvedNamedStars) {
             double3 position = center + StellariumRenderer.ApplyAlignment(namedStar.Direction) * radius;
-            // Adds a little bit of an offset to the right/down of where the name will be drawn
-            position += new double3(0, 0, 0);
+            if(!camera.IsPointWithinFov(position))
+                continue;
+            if(!StellariumRenderer.IsVisibleFromCamera(position)) {
+                continue;
+            }
 
-            float2 screen = camera.EgoToScreen(position);
-
+            float2 screen = StellariumRenderer.EgoToOverlayScreen(camera, position);
+            
             ImDrawListExtensions.AddText(
                 draw_list,
                 screen,
@@ -169,11 +239,14 @@ public static class SkyCulturesRenderer {
     public static void ResolveSegments() {
         resolvedSegments.Clear();
         resolvedLabels.Clear();
+        resolvedNamedStars.Clear();
 
         SkyCulture? culture = ActiveSkyCulture;
 
         if(culture == null)
             return;
+
+        HashSet<int> namedStarHips = new();
 
         foreach(KeyValuePair<string, List<ConstellationSegment>> entry in culture.Constellations) {
             string constellationId = entry.Key;
@@ -188,10 +261,15 @@ public static class SkyCulturesRenderer {
                 if(!hipToDirection.TryGetValue(segment.ToHip, out double3 b))
                     continue;
 
+                if(!IsRenderedStar(a) || !IsRenderedStar(b))
+                    continue;
+
                 resolvedSegments.Add(new ResolvedConstellationSegment(a, b));
 
                 labelStarHips.Add(segment.FromHip);
                 labelStarHips.Add(segment.ToHip);
+                AddResolvedStarName(segment.FromHip, a, namedStarHips);
+                AddResolvedStarName(segment.ToHip, b, namedStarHips);
             }
 
             if(labelStarHips.Count == 0)
@@ -234,49 +312,91 @@ public static class SkyCulturesRenderer {
         }
     }
 
-
-    public static void SetStars(IEnumerable<Star> stars) {
-        hipToDirection.Clear();
-
-        foreach(Star star in stars) {
-            if(star.Hip <= 0)
-                continue;
-
-            hipToDirection[star.Hip] =
-                StarDirectionConverter.RaDecToDirection(
-                    star.RaHours,
-                    star.DecDegrees);
-            // If the star has a non-empty combined name, store it in the hipToStar dictionary for later use in the UI.
-            if(!string.IsNullOrWhiteSpace(star.Name)) {
-                hipToStar[star.Hip] = star;
-            }
+    private static void AddResolvedStarName(int hip, double3 direction, HashSet<int> namedStarHips) {
+        if(namedStarHips.Add(hip) && hipToName.TryGetValue(hip, out string? name)) {
+            resolvedNamedStars.Add(new ResolvedNamedStar(name, direction));
         }
     }
 
-    private static List<Star> LoadHygStars(string path) {
-        List<Star> stars = new();
+    private static void LoadRenderedStarDirections() {
+        renderedStarDirections.Clear();
+
+        Mod? coreMod = ModLibrary.Find("Core");
+        if(coreMod is null || coreMod == Mod.Empty || string.IsNullOrWhiteSpace(coreMod.DirectoryPath))
+            return;
+
+        string starBinaryPath = Path.Combine(
+            coreMod.DirectoryPath,
+            "briars_binary_dimmer_better_99k_stars.bin");
+        if(!File.Exists(starBinaryPath))
+            return;
+
+        using FileStream stream = File.OpenRead(starBinaryPath);
+        using BinaryReader reader = new(stream);
+
+        if(stream.Length < sizeof(int))
+            return;
+
+        int starCount = reader.ReadInt32();
+        long availableStarCount = (stream.Length - stream.Position) / 16;
+        int recordsToRead = (int)Math.Min(Math.Max(starCount, 0), availableStarCount);
+
+        for(int index = 0; index < recordsToRead; index++) {
+            float x = reader.ReadSingle();
+            float y = reader.ReadSingle();
+            float z = reader.ReadSingle();
+            stream.Position += 4;
+
+            renderedStarDirections.Add(new StarDirectionKey(
+                BitConverter.SingleToInt32Bits(x),
+                BitConverter.SingleToInt32Bits(y),
+                BitConverter.SingleToInt32Bits(z)));
+        }
+    }
+
+    private static bool IsRenderedStar(double3 direction) {
+        if(renderedStarDirections.Count == 0)
+            return true;
+
+        return renderedStarDirections.Contains(new StarDirectionKey(
+            BitConverter.SingleToInt32Bits((float)direction.X),
+            BitConverter.SingleToInt32Bits((float)direction.Y),
+            BitConverter.SingleToInt32Bits((float)direction.Z)));
+    }
+
+    private static void LoadCatalog(string path) {
+        hipToDirection.Clear();
+        hipToName.Clear();
+        hipToInformation.Clear();
 
         if(!File.Exists(path))
-            return stars;
+            return;
 
         using StreamReader reader = new StreamReader(path);
 
         string? headerLine = reader.ReadLine();
 
         if(headerLine == null)
-            return stars;
+            return;
 
         string[] headers = SplitCsvLine(headerLine);
 
         int hipIndex = Array.IndexOf(headers, "hip");
         int raIndex = Array.IndexOf(headers, "ra");
         int decIndex = Array.IndexOf(headers, "dec");
-        int bfIndex = Array.IndexOf(headers, "bf");
+        int bayerIndex = Array.IndexOf(headers, "bayer");
+        int constellationIndex = Array.IndexOf(headers, "con");
         int properIndex = Array.IndexOf(headers, "proper");
+        int magnitudeIndex = Array.IndexOf(headers, "mag");
+        int absoluteMagnitudeIndex = Array.IndexOf(headers, "absmag");
+        int spectralTypeIndex = Array.IndexOf(headers, "spect");
+        int distanceIndex = Array.IndexOf(headers, "dist");
         
 
-        if(hipIndex < 0 || raIndex < 0 || decIndex < 0)
-            return stars;
+        if(hipIndex < 0 || raIndex < 0 || decIndex < 0 ||
+            bayerIndex < 0 || constellationIndex < 0 || properIndex < 0 ||
+            magnitudeIndex < 0 || absoluteMagnitudeIndex < 0 || spectralTypeIndex < 0 || distanceIndex < 0)
+            return;
 
         while(reader.ReadLine() is string rawLine) {
             if(string.IsNullOrWhiteSpace(rawLine))
@@ -284,7 +404,11 @@ public static class SkyCulturesRenderer {
 
             string[] parts = SplitCsvLine(rawLine);
 
-            int maxNeededIndex = Math.Max(hipIndex, Math.Max(raIndex, decIndex));
+            int maxNeededIndex = Math.Max(
+                Math.Max(hipIndex, Math.Max(raIndex, decIndex)),
+                Math.Max(
+                    Math.Max(bayerIndex, Math.Max(constellationIndex, properIndex)),
+                    Math.Max(magnitudeIndex, Math.Max(absoluteMagnitudeIndex, Math.Max(spectralTypeIndex, distanceIndex)))));
 
             if(parts.Length <= maxNeededIndex)
                 continue;
@@ -321,24 +445,95 @@ public static class SkyCulturesRenderer {
                 continue;
             }
 
-            // If either the bf or proper name fields are non-empty store them in the dictionary for the entry for later use in the UI. This is not strictly necessary for the rendering of the asterisms, but it can be useful for displaying star names in the UI.
-            // Stores them in one combined entry with a separator - with proper name first if available, then bf name if available. If both are empty, the entry will be an empty string.
-            string bfName = bfIndex >= 0 && bfIndex < parts.Length ? parts[bfIndex] : "";
-            string properName = properIndex >= 0 && properIndex < parts.Length ? parts[properIndex] : "";
-            string combinedName = !string.IsNullOrWhiteSpace(properName) ? properName : bfName;
-            if(!string.IsNullOrWhiteSpace(combinedName)) {
-                // Store the combined name in a dictionary for later use in the UI. This is not strictly necessary for the rendering of the asterisms, but it can be useful for displaying star names in the UI.
-                // For example, you could have a dictionary like Dictionary<int, string> hipToName = new Dictionary<int, string>(); and then store the combined name like this:
-                // hipToName[hip] = combinedName;
-            }
-            // now adds the star to the list of stars to be used for rendering the asterisms, which also stores the combined name in a dictionary for later use in the UI.
-            stars.Add(new Star(hip, raHours, decDegrees, combinedName));
+            hipToDirection[hip] = StarDirectionConverter.RaDecToDirection(raHours, decDegrees);
 
+            string displayName = GetDisplayName(
+                parts[properIndex],
+                parts[constellationIndex],
+                parts[bayerIndex],
+                hip);
+            hipToName[hip] = displayName;
+            hipToInformation[hip] = new StarInformation(
+                hip,
+                displayName,
+                ExpandBayerDesignation(parts[bayerIndex]),
+                FormatRightAscension(raHours),
+                FormatSignedDeclination(parts[decIndex]),
+                parts[magnitudeIndex],
+                parts[absoluteMagnitudeIndex],
+                parts[spectralTypeIndex],
+                parts[distanceIndex]);
+        }
+    }
 
-
+    private static string FormatSignedDeclination(string declination) {
+        if(double.TryParse(
+            declination,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double value)) {
+            return value.ToString("+0.########;-0.########;+0", CultureInfo.InvariantCulture);
         }
 
-        return stars;
+        return declination;
+    }
+
+    private static string FormatRightAscension(double hours) {
+        int totalSeconds = (int)Math.Round(hours * 3600d, MidpointRounding.AwayFromZero);
+        totalSeconds %= 24 * 60 * 60;
+        if(totalSeconds < 0)
+            totalSeconds += 24 * 60 * 60;
+
+        int wholeHours = totalSeconds / 3600;
+        int wholeMinutes = totalSeconds % 3600 / 60;
+        int wholeSeconds = totalSeconds % 60;
+        return $"{wholeHours:D2}:{wholeMinutes:D2}:{wholeSeconds:D2}";
+    }
+
+    private static string ExpandBayerDesignation(string bayer) {
+        if(string.IsNullOrWhiteSpace(bayer))
+            return bayer;
+
+        string[] parts = bayer.Split('-', 2);
+        string letter = parts[0] switch {
+            "Alp" => "Alpha",
+            "Bet" => "Beta",
+            "Gam" => "Gamma",
+            "Del" => "Delta",
+            "Eps" => "Epsilon",
+            "Zet" => "Zeta",
+            "Eta" => "Eta",
+            "The" => "Theta",
+            "Iot" => "Iota",
+            "Kap" => "Kappa",
+            "Lam" => "Lambda",
+            "Mu" => "Mu",
+            "Nu" => "Nu",
+            "Xi" => "Xi",
+            "Omi" => "Omicron",
+            "Pi" => "Pi",
+            "Rho" => "Rho",
+            "Sig" => "Sigma",
+            "Tau" => "Tau",
+            "Ups" => "Upsilon",
+            "Phi" => "Phi",
+            "Chi" => "Chi",
+            "Psi" => "Psi",
+            "Ome" => "Omega",
+            _ => parts[0]
+        };
+
+        return parts.Length == 1 ? letter : $"{letter}-{parts[1]}";
+    }
+
+    private static string GetDisplayName(string properName, string constellation, string bayer, int hip) {
+        if(!string.IsNullOrWhiteSpace(properName))
+            return properName;
+
+        if(!string.IsNullOrWhiteSpace(bayer))
+            return string.IsNullOrWhiteSpace(constellation) ? bayer : $"{constellation} {bayer}";
+
+        return string.IsNullOrWhiteSpace(constellation) ? $"HIP {hip}" : $"{constellation} HIP {hip}";
     }
 
     private static string[] SplitCsvLine(string line) {

@@ -22,10 +22,10 @@ See LICENSES/GPL-2.0.txt for the full license text.
 
 Copyright © the respective Stellarium contributors.
 
-2. hyg_v42.csv
+2. athyg_32_reduced_m10.csv
 
-The file hyg_v42.csv is from the HYG Star Database (David Nash)
-URL: https://astronexus.com/projects/hyg
+The file athyg_32_reduced_m10.csv is from the HYG Star Database (David Nash)
+URL: https://astronexus.com/projects/at-hyg
 
 This file is licensed under CC BY-SA 4.0.
 https://creativecommons.org/licenses/by-sa/4.0/

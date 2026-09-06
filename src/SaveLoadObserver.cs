@@ -2,7 +2,7 @@
 using HarmonyLib;
 using KSA;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 internal static class SaveLoadObserver {
     /// <summary>
@@ -26,10 +26,10 @@ internal static class SaveLoadObserver {
             try {
                 CurrentSaveId = __instance.Id ?? string.Empty;
 
-                StellariumCatalogSettingsStore.LoadForSave(CurrentSaveId);
+                OhMyStarsSettingsStore.LoadForSave(CurrentSaveId);
             } catch(Exception ex) {
                 DefaultCategory.Log.Warning(
-                    $"[StellariumCatalog] SaveLoadObserver Load Postfix: {ex}");
+                    $"[OhMyStars] SaveLoadObserver Load Postfix: {ex}");
             }
         }
     }
@@ -45,10 +45,10 @@ internal static class SaveLoadObserver {
 
                 CurrentSaveId = newSaveId;
 
-                StellariumCatalogSettingsStore.SaveForSave(newSaveId);
+                OhMyStarsSettingsStore.SaveForSave(newSaveId);
             } catch(Exception ex) {
                 DefaultCategory.Log.Warning(
-                    $"[StellariumCatalog] SaveLoadObserver Make Postfix: {ex}");
+                    $"[OhMyStars] SaveLoadObserver Make Postfix: {ex}");
             }
         }
     }

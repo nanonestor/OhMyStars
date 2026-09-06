@@ -5,7 +5,7 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using KSA;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 internal static class SkyMarkingsRenderer {
     public static void Init() {

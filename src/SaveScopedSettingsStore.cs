@@ -2,7 +2,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 internal sealed class SaveScopedSettingsStore<TSettings> {
     private readonly Dictionary<string, TSettings> _bySaveId = new();

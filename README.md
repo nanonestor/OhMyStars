@@ -1,5 +1,5 @@
-# StellariumCatalog
-StellariumCatalog is a mod for Kitten Space Agency that lets you display constellations in the sky. It includes constellations from dozens of cultures. Constellation data is sourced from [Stellarium](https://stellarium.org/). The skybox in KSA is rotated incorrectly, so the constellations in this mod are rotated to match.
+# Oh My Stars
+Oh My Stars is a mod for Kitten Space Agency that lets you display constellations in the sky. It includes constellations from dozens of cultures. Constellation data is sourced from [Stellarium](https://stellarium.org/). The skybox in KSA is rotated incorrectly, so the constellations in this mod are rotated to match.
 
 **Updated for KSA v2026.6.8.4680**
 
@@ -16,15 +16,15 @@ StellariumCatalog is a mod for Kitten Space Agency that lets you display constel
 2. Install [ModMenu](https://github.com/MrJeranimo/ModMenu/)
    1. Download and unzip [the latest release of ModMenu](https://github.com/MrJeranimo/ModMenu/releases/latest)
    2. Put the contents in `Kitten Space Agency\Mods\`
-3. Download and unzip the latest release of StellariumCatalog [from Github](https://github.com/DavidK0/StellariumCatalog/releases/latest) or [from SpaceDock](https://spacedock.info/mod/4346/StellariumCatalog)
+3. Download and unzip the latest release of Oh My Stars [from GitHub](https://github.com/nanonestor/OhMyStars/releases/latest)
 4. Place the contents into `Kitten Space Agency\Mods\`. Your mod folder should look something like this:
 ```
-├── StellariumCatalog
+├── OhMyStars
 │   ├── LICENSE
 │   ├── ModMenu.Attributes.dll
 │   ├── NOTICE.txt
-│   ├── StellariumCatalog.deps.json
-│   ├── StellariumCatalog.dll
+│   ├── OhMyStars.deps.json
+│   ├── OhMyStars.dll
 │   ├── hyg_v42.csv
 │   ├── licenses/
 │   ├── lines_in_20.txt
@@ -44,9 +44,5 @@ StellariumCatalog is a mod for Kitten Space Agency that lets you display constel
 * The constellation lines and names will be on by default.
 * Change settings by using the ModMenu menu
 </details>
-
-## Community links
-* [StellariumCatalog on Ahwoo Forums](https://forums.ahwoo.com/threads/stellariumcatalog.1006/)
-* [StellariumCatalog on SpaceDock](https://spacedock.info/mod/4346/StellariumCatalog)
 
 **AI Disclaimer:** This mod was made with the help of AI.

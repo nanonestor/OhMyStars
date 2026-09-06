@@ -1,7 +1,7 @@
 ﻿using Brutal.Numerics;
 using KSA;
 
-namespace StellariumCatalog;
+namespace OhMyStars;
 
 public static class VectorMath {
     private const float FloatEpsilon = 1e-6f;
