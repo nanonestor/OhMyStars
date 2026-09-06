@@ -18,8 +18,8 @@ internal static class OhMyStarsWindow {
     private static class Defaults {
         public const bool ShowStarNames = false;
         public const bool ShowIAUConstellations = false;
-        public const bool ShowAsterisms = false;
-        public const bool ShowAsterismNames = false;
+        public const bool ShowAsterisms = true;
+        public const bool ShowAsterismNames = true;
         public const float IAULineOpacity = 0.4f;
         public static readonly float3 IAULineColor = new float3(1f, 1f, 1f);
         public const float AsterismLineOpacity = 0.4f;

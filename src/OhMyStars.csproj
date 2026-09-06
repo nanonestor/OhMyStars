@@ -22,6 +22,18 @@
     <SendBuildToTestDir>$(ModsFolder)\$(ModNamespace)</SendBuildToTestDir>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ModContent Include="..\licenses\**\*">
+      <TargetPath>licenses\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ModContent>
+    <ModContent Include="..\skycultures\**\*">
+      <TargetPath>skycultures\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ModContent>
+    <ModContent Include="..\lines_in_20.txt">
+      <TargetPath>lines_in_20.txt</TargetPath>
+    </ModContent>
+  </ItemGroup>
+
   <!-- Copies built mod files to the game's mods folder -->
   <Target Name="CopyCustomContent" AfterTargets="AfterBuild">
     <Copy SourceFiles="$(BuildDir)mod.toml" DestinationFolder="$(SendBuildToTestDir)" />
@@ -31,6 +43,9 @@
     <Copy SourceFiles="$(BuildDir)settings.ini" DestinationFolder="$(SendBuildToTestDir)" Condition="Exists('$(BuildDir)settings.ini')" />
     <Copy SourceFiles="$(BuildDir)athyg_32_reduced_m10.csv" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)NOTICE.txt" DestinationFolder="$(SendBuildToTestDir)" />
+    <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures" />
+    <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(BuildDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(SendBuildToTestDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
   </Target>
 
   <ItemGroup>
@@ -45,6 +60,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="..\NOTICE.txt" Link="NOTICE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\lines_in_20.txt" Link="lines_in_20.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="settings.ini">
