@@ -1,9 +1,11 @@
 # Oh My Stars
-Oh My Stars is a mod for Kitten Space Agency that lets you display constellations in the sky. It includes constellations from dozens of cultures. Constellation data is sourced from [Stellarium](https://stellarium.org/). The skybox in KSA is rotated incorrectly, so the constellations in this mod are rotated to match.
+Oh My Stars is a mod for Kitten Space Agency that lets you display constellations in the sky. It includes constellations from dozens of cultures. Constellation and Star data are sourced from:
+- Stellarium Project [https://stellarium.org/](https://stellarium.org/)
+- AT-HYG catalog 3.2 [https://astronexus.com/projects/at-hyg](https://astronexus.com/projects/at-hyg)
+- Constellation Boundaries (Pierre Barbier) - [https://pbarbier.com/constellations/boundaries.html](https://pbarbier.com/constellations/boundaries.html)
 
-**Updated for KSA v2026.6.8.4680**
 
-<img width="420" height="230" alt="promo_pic" src="https://github.com/user-attachments/assets/663343d2-83d1-4bb2-9c7e-1ffb6332f135" />
+<img width="1932" height="1293" alt="OhMyStars" src="https://github.com/user-attachments/assets/b7452512-7885-41c8-a3ac-d754b64a1633" />
 
 ## Getting started
 
@@ -38,11 +40,5 @@ Oh My Stars is a mod for Kitten Space Agency that lets you display constellation
 5. Run KSA through StarMap
 </details>
 
-<details>
-<summary>How to use</summary>
-   
-* The constellation lines and names will be on by default.
-* Change settings by using the ModMenu menu
-</details>
 
-**AI Disclaimer:** This mod was made with the help of AI.
+**AI Disclaimer:** This mod was made with the help of AI (but not entirely!).
