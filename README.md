@@ -4,6 +4,7 @@ Oh My Stars is a mod for Kitten Space Agency that lets you display constellation
 **Updated for KSA v2026.6.8.4680**
 
 <img width="420" height="230" alt="promo_pic" src="https://github.com/user-attachments/assets/663343d2-83d1-4bb2-9c7e-1ffb6332f135" />
+<img width="1932" height="1293" alt="OhMyStars" src="https://github.com/user-attachments/assets/b7452512-7885-41c8-a3ac-d754b64a1633" />
 
 ## Getting started
 
