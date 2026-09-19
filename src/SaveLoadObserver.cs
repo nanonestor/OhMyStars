@@ -13,6 +13,7 @@ internal static class SaveLoadObserver {
 
     public static void Reset() {
         CurrentSaveId = string.Empty;
+        OhMyStarsWindow.ClearOrientedStar();
     }
 
     public static void ApplyPatches(Harmony harmony) {

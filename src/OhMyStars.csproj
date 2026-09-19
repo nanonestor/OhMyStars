@@ -109,6 +109,15 @@
     <Reference Include="Brutal.ImGui">
       <HintPath>$(KSAGameDir)\Brutal.ImGui.dll</HintPath>
     </Reference>
+    <Reference Include="BepuUtilities">
+      <HintPath>$(KSAGameDir)\BepuUtilities.dll</HintPath>
+    </Reference>
+    <Reference Include="BepuPhysics">
+      <HintPath>$(KSAGameDir)\BepuPhysics.dll</HintPath>
+    </Reference>
+    <Reference Include="Planet.Render.Core">
+      <HintPath>$(KSAGameDir)\Planet.Render.Core.dll</HintPath>
+    </Reference>
     <Reference Include="KSA">
       <HintPath>$(KSAGameDir)\KSA.dll</HintPath>
     </Reference>

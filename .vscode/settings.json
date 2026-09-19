@@ -1,5 +1,8 @@
 {
     "chat.tools.terminal.autoApprove": {
         "dotnet build": true
-    }
+    },
+    "githubPullRequests.ignoredPullRequestBranches": [
+        "main"
+    ]
 }

@@ -93,6 +93,8 @@ internal unsafe static class StellariumRenderer {
 
         DrawStarPointer(draw_list.Value, camera, radius);
 
+        NavballMarkerRenderer.Draw();
+
         ImGui.End();
     }
 

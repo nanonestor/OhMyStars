@@ -93,6 +93,16 @@ public static class SkyCulturesRenderer {
         return hipToDirection.TryGetValue(hip, out direction);
     }
 
+    public static bool TryGetStarDisplayName(int hip, out string name) {
+        if(hipToName.TryGetValue(hip, out string? found) && !string.IsNullOrWhiteSpace(found)) {
+            name = found;
+            return true;
+        }
+
+        name = string.Empty;
+        return false;
+    }
+
     private static readonly ImColor8 white = new ImColor8(255, 255, 255, 255);
 
     private static readonly Dictionary<int, double3> hipToDirection = new();

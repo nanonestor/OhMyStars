@@ -1,5 +1,6 @@
 bin/
 obj/
+decompiled/
 
 # Local machine-specific overrides (e.g. KSAGameDir), never committed
 src/OhMyStars.csproj.user.props

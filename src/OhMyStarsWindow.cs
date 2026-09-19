@@ -20,6 +20,9 @@ internal static class OhMyStarsWindow {
         public const bool ShowIAUConstellations = false;
         public const bool ShowAsterisms = true;
         public const bool ShowAsterismNames = true;
+        public const bool ShowNavballMarker = false;
+        public const bool ShowNavballMarkerLabel = true;
+        public const WindowDisplay Tab = WindowDisplay.Settings;
         public const float IAULineOpacity = 0.4f;
         public static readonly float3 IAULineColor = new float3(1f, 1f, 1f);
         public const float AsterismLineOpacity = 0.4f;
@@ -37,6 +40,7 @@ internal static class OhMyStarsWindow {
     private static WindowDisplay _display = WindowDisplay.Settings;
     private static string? _selectedConstellationId;
     private static int _selectedStarHip;
+    private static int _orientedStarHip;
     private static bool _showStarPointer;
     private static float2 _windowPosition;
     private static float2 _windowSize;
@@ -64,6 +68,10 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.showIAUConstellations = ReadBool(values, "ShowIAUConstellations", Defaults.ShowIAUConstellations);
         StellariumRenderer.showAsterisms = ReadBool(values, "ShowAsterisms", Defaults.ShowAsterisms);
         StellariumRenderer.showAsterismNames = ReadBool(values, "ShowAsterismNames", Defaults.ShowAsterismNames);
+        NavballMarkerRenderer.showNavballMarker = ReadBool(values, "ShowNavballMarker", Defaults.ShowNavballMarker);
+        NavballMarkerRenderer.showMarkerLabel = ReadBool(values, "ShowNavballMarkerLabel", Defaults.ShowNavballMarkerLabel);
+
+        _display = ReadTab(values, "Tab", Defaults.Tab);
 
         StellariumRenderer.iauLineOpacity = ReadFloat(values, "IAULineOpacity", Defaults.IAULineOpacity);
         StellariumRenderer.iauLineColor = new float3(
@@ -90,10 +98,13 @@ internal static class OhMyStarsWindow {
 
         string[] lines = new[] {
             "[Window]",
+            $"Tab={GetPersistableTab()}",
             $"ShowStarNames={StellariumRenderer.showStarNames.ToString(CultureInfo.InvariantCulture)}",
             $"ShowIAUConstellations={StellariumRenderer.showIAUConstellations.ToString(CultureInfo.InvariantCulture)}",
             $"ShowAsterisms={StellariumRenderer.showAsterisms.ToString(CultureInfo.InvariantCulture)}",
             $"ShowAsterismNames={StellariumRenderer.showAsterismNames.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowNavballMarker={NavballMarkerRenderer.showNavballMarker.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowNavballMarkerLabel={NavballMarkerRenderer.showMarkerLabel.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineOpacity={StellariumRenderer.iauLineOpacity.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineColorR={StellariumRenderer.iauLineColor.X.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineColorG={StellariumRenderer.iauLineColor.Y.ToString(CultureInfo.InvariantCulture)}",
@@ -114,6 +125,9 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.showIAUConstellations = Defaults.ShowIAUConstellations;
         StellariumRenderer.showAsterisms = Defaults.ShowAsterisms;
         StellariumRenderer.showAsterismNames = Defaults.ShowAsterismNames;
+        NavballMarkerRenderer.showNavballMarker = Defaults.ShowNavballMarker;
+        NavballMarkerRenderer.showMarkerLabel = Defaults.ShowNavballMarkerLabel;
+        _display = Defaults.Tab;
         StellariumRenderer.iauLineOpacity = Defaults.IAULineOpacity;
         StellariumRenderer.iauLineColor = Defaults.IAULineColor;
         StellariumRenderer.asterismLineOpacity = Defaults.AsterismLineOpacity;
@@ -143,13 +157,9 @@ internal static class OhMyStarsWindow {
 
         ConsoleStyle.PushWidgetStyle();
 
-        if(ImGui.Button("Settings")) {
-            _display = WindowDisplay.Settings;
-        }
+        DrawTabButton("Settings", WindowDisplay.Settings);
         ImGui.SameLine();
-        if(ImGui.Button("Information")) {
-            _display = WindowDisplay.Information;
-        }
+        DrawTabButton("Information", WindowDisplay.Information);
         ImGui.Separator();
 
         if(_display == WindowDisplay.Information) {
@@ -309,6 +319,79 @@ internal static class OhMyStarsWindow {
         }
     }
 
+    // Same as ConsoleWidgets.RegionHeader (uppercase muted label plus trailing hairline rule),
+    // but with the label font scaled up so the selected star name stands out.
+    private static void DrawRegionHeaderLarge(string label, float scale) {
+        string upper = label.ToUpperInvariant();
+
+        ConsoleStyle.PushLabelFont();
+        float fontSize = ImGui.GetFontSize() * scale;
+        ConsoleStyle.PopFont();
+
+        ImGui.PushFont(ImGui.GetFont(), fontSize);
+        float2 cursorScreenPos = ImGui.GetCursorScreenPos();
+        ImGui.TextColored(in ConsoleStyle.TextMuted, upper);
+        float textWidth = ImGui.CalcTextSize(upper).X;
+        ImGui.PopFont();
+
+        float ruleY = cursorScreenPos.Y + fontSize * 0.5f;
+        float ruleStart = cursorScreenPos.X + textWidth + ConsoleWidgets.RegionHeaderRuleGapPx;
+        float ruleEnd = cursorScreenPos.X + ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX();
+        if(ruleEnd > ruleStart) {
+            ImDrawListPtr windowDrawList = ImGui.GetWindowDrawList();
+            windowDrawList.AddLine(new float2(ruleStart, ruleY), new float2(ruleEnd, ruleY), ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+        }
+    }
+
+    // The active tab is shaded with a filled button in the same color the game uses for ImGui
+    // window title bars, read live from the ImGui style so it follows any theme change.
+    private static void DrawTabButton(string label, WindowDisplay tab) {
+        bool selected = _display == tab;
+        bool clicked = selected
+            ? DrawColoredTabButton(label)
+            : ConsoleWidgets.Button(label, label, default);
+
+        if(clicked && !selected) {
+            _display = tab;
+            SaveSettings();
+        }
+    }
+
+    // Same layout/rounding/padding as ConsoleWidgets' filled buttons (see PrimaryButton in
+    // ConsoleWidgets.DrawButtonCore), but filled with the window title bar color and white text.
+    private static bool DrawColoredTabButton(string label) {
+        ConsoleStyle.PushLabelFont();
+        float2 textSize = ImGui.CalcTextSize(label);
+        float fontSize = ImGui.GetFontSize();
+        ConsoleStyle.PopFont();
+
+        float2 size = new float2(
+            textSize.X + ConsoleWidgets.ButtonHorizontalPaddingPx * 2f,
+            fontSize + ConsoleWidgets.ButtonVerticalPaddingPx * 2f);
+        float2 pMin = ImGui.GetCursorScreenPos();
+        float2 pMax = pMin + size;
+
+        bool clicked = ImGui.InvisibleButton(new ImString($"##Tab_{label}"), in size, ImGuiButtonFlags.None);
+        bool hovered = ImGui.IsItemHovered();
+
+        float4 titleBarColor = ImGui.GetStyleColorVec4(ImGuiCol.TitleBgActive);
+        uint fill = ImGui.ColorConvertFloat4ToU32(new float4(titleBarColor.X, titleBarColor.Y, titleBarColor.Z, 1f));
+        uint border = ConsoleStyle.FrameU32;
+        uint textColor = ImGui.ColorConvertFloat4ToU32(new float4(1f, 1f, 1f, 1f));
+
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        drawList.AddRectFilled(in pMin, in pMax, ConsoleStyle.ApplyAlpha(fill), ConsoleStyle.FrameRoundingPx);
+        if(hovered) {
+            drawList.AddRectFilled(in pMin, in pMax, ConsoleStyle.ApplyAlpha(ConsoleStyle.ButtonHoverLightenU32), ConsoleStyle.FrameRoundingPx);
+        }
+        drawList.AddRect(in pMin, in pMax, ConsoleStyle.ApplyAlpha(border), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+
+        ConsoleStyle.PushLabelFont();
+        drawList.AddText(pMin + (size - textSize) * 0.5f, ConsoleStyle.ApplyAlpha(textColor), label);
+        ConsoleStyle.PopFont();
+        return clicked;
+    }
+
     private static void DrawInformation() {
         IReadOnlyList<ConstellationInformation> constellations = SkyCulturesRenderer.GetActiveConstellationInformation();
         if(constellations.Count == 0) {
@@ -365,15 +448,25 @@ internal static class OhMyStarsWindow {
             ImGui.EndCombo();
         }
 
-        ConsoleWidgets.BeginRow("Star pointer");
-        ConsoleWidgets.Checkbox("StarPointer", ref _showStarPointer, pending: false);
-        ConsoleWidgets.EndRow();
+        if(_showStarPointer) {
+            if(ConsoleWidgets.PositiveButton("Star Pointer", "StarPointer", default)) {
+                _showStarPointer = false;
+            }
+        } else {
+            if(ConsoleWidgets.Button("Star Pointer", "StarPointer", default)) {
+                _showStarPointer = true;
+            }
+        }
+        if(_showStarPointer) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "Pointer On");
+        }
 
         selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
         star = constellation.Stars[selectedStarIndex];
         ImGui.NewLine();
         ImGui.Separator();
-        ConsoleWidgets.RegionHeader(star.DisplayName);
+        DrawRegionHeaderLarge(star.DisplayName, 1.5f);
         ImGui.Separator();
         DrawInformationValue("Hipparcos #", star.Hip.ToString(CultureInfo.InvariantCulture));
         DrawInformationValue("RA (hrs:min:sec)", star.RightAscension);
@@ -391,6 +484,147 @@ internal static class OhMyStarsWindow {
             "How bright the star would appear from a standard distance of 10 parsecs (about 32.6 light years). Smaller or negative values are brighter.");
         DrawSpectrumInformationValue(star.SpectralType);
         DrawInformationValue("Distance (LY)", star.Distance);
+
+        ImGui.Dummy(new float2(0f, 4f));
+        ImGui.NewLine();
+        ImGui.Separator();
+
+        bool isOriented = IsOrientedToStar(star.Hip);
+        Vehicle? vehicle = Program.ControlledVehicle;
+        bool hasVehicle = vehicle != null;
+
+        using(new ImGuiDisabledScope(!hasVehicle)) {
+            if(isOriented) {
+                if(ConsoleWidgets.PositiveButton("Orient to Star", "OrientToStar", default)) {
+                    ToggleOrientToStar(star.Hip);
+                }
+            } else {
+                if(ConsoleWidgets.Button("Orient to Star", "OrientToStar", default)) {
+                    ToggleOrientToStar(star.Hip);
+                }
+            }
+        }
+
+        if(isOriented) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "Active Orientation");
+        } else if(!hasVehicle) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.TextMuted, "(No active vehicle)");
+        }
+
+        ImGui.Dummy(new float2(0f, 4f));
+        ImGui.Separator();
+
+        bool showNavballMarker = NavballMarkerRenderer.showNavballMarker;
+        if(showNavballMarker) {
+            if(ConsoleWidgets.PositiveButton("Mark Navball", "MarkNavball", default)) {
+                NavballMarkerRenderer.showNavballMarker = false;
+                SaveSettings();
+            }
+        } else {
+            if(ConsoleWidgets.Button("Mark Navball", "MarkNavball", default)) {
+                NavballMarkerRenderer.showNavballMarker = true;
+                SaveSettings();
+            }
+        }
+        if(showNavballMarker) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "Marker On");
+        }
+
+        ImGui.Dummy(new float2(0f, 4f));
+        ImGui.Separator();
+
+        bool showNavballMarkerLabel = NavballMarkerRenderer.showMarkerLabel;
+        ConsoleWidgets.BeginRow("Navball Show Name");
+        if(ConsoleWidgets.Checkbox("ShowNavballMarkerLabel", ref showNavballMarkerLabel, pending: false)) {
+            NavballMarkerRenderer.showMarkerLabel = showNavballMarkerLabel;
+            SaveSettings();
+        }
+        ConsoleWidgets.EndRow();
+    }
+
+    public static int OrientedStarHip => _orientedStarHip;
+
+    public static int SelectedStarHip => _selectedStarHip;
+
+    public static void ClearOrientedStar() {
+        ClearOrientedStar(null);
+    }
+
+    // Called from the flight computer patches whenever the game itself changes attitude mode.
+    // CustomAttitudeTarget holds our star-pointing angles while AttitudeTrackTarget is Custom, but
+    // the engine reinterprets that same field as an angular rate once the mode becomes None (rate-hold),
+    // so it must be zeroed out whenever we stop being the ones driving attitude. AttitudeTarget (the
+    // resolved quaternion) also needs zeroing: for named track targets the engine only overwrites it
+    // when it can resolve a direction (e.g. Prograde with zero velocity resolves to nothing), otherwise
+    // it silently keeps whatever quaternion was last there - our star-pointing one - and the vehicle
+    // keeps pointing at the star even though the selected mode says otherwise.
+    public static void ClearOrientedStar(FlightComputer? flightComputer) {
+        if(_orientedStarHip > 0 && flightComputer != null) {
+            flightComputer.CustomAttitudeTarget = double3.Zero;
+            flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+        }
+        _orientedStarHip = 0;
+    }
+
+    public static bool IsOrientedToStar(int hip) {
+        if(hip <= 0 || _orientedStarHip != hip)
+            return false;
+
+        Vehicle? vehicle = Program.ControlledVehicle;
+        if(vehicle == null)
+            return false;
+
+        FlightComputer fc = vehicle.FlightComputer;
+        return fc.AttitudeMode == FlightComputerAttitudeMode.Auto &&
+               fc.AttitudeTrackTarget == FlightComputerAttitudeTrackTarget.Custom &&
+               fc.AttitudeFrame == VehicleReferenceFrame.EclBody;
+    }
+
+    // One-way: engages star orientation for the given star. Leaving star orientation is done via the
+    // game's own standard mode buttons/keybinds, which the flight computer patches detect and react to.
+    public static void ToggleOrientToStar(int hip) {
+        Vehicle? vehicle = Program.ControlledVehicle;
+        if(vehicle == null || hip <= 0 || IsOrientedToStar(hip))
+            return;
+
+        _orientedStarHip = hip;
+        ApplyStarOrientation(vehicle, hip);
+    }
+
+    public static void ApplyStarOrientation(Vehicle vehicle, int hip) {
+        if(hip <= 0 || vehicle == null)
+            return;
+
+        if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 rawDir))
+            return;
+
+        double3 starDirEcl = StellariumRenderer.ApplyAlignment(rawDir);
+        double len = VectorMath.Length(starDirEcl);
+        if(len <= 1e-12)
+            return;
+        starDirEcl /= len;
+
+        // In KSA, VehicleReferenceFrame.EclBody is the ecliptic body-reference frame,
+        // which relates to Ecliptic (CCE) coordinates via BODY2UPFRAME (negating Y and Z).
+        // For EclBody, Euler angles (roll, yaw, pitch) map to unit forward as:
+        // forward vector = (cos(pitch)*cos(yaw), sin(pitch), -cos(pitch)*sin(yaw)).
+        // Since starDirEcl in EclBody coordinates is (starDirEcl.X, -starDirEcl.Y, -starDirEcl.Z),
+        // we can solve directly for pitch and yaw:
+        double dx = starDirEcl.X;
+        double dy = -starDirEcl.Y;
+        double dz = -starDirEcl.Z;
+
+        double pitch = Math.Asin(Math.Clamp(dy, -1.0, 1.0));
+        double yaw = Math.Atan2(-dz, dx);
+        double roll = 0.0;
+
+        vehicle.FlightComputer.AttitudeMode = FlightComputerAttitudeMode.Auto;
+        vehicle.FlightComputer.AttitudeFrame = VehicleReferenceFrame.EclBody;
+        vehicle.FlightComputer.AttitudeTrackTarget = FlightComputerAttitudeTrackTarget.Custom;
+        vehicle.FlightComputer.CustomAttitudeTarget = new double3(roll, yaw, pitch);
     }
 
     public static bool TryGetStarPointer(out int hip, out float2 windowPosition, out float2 windowSize) {
@@ -398,6 +632,14 @@ internal static class OhMyStarsWindow {
         windowPosition = _windowPosition;
         windowSize = _windowSize;
         return _showWindow && _display == WindowDisplay.Information && _showStarPointer && hip > 0;
+    }
+
+    // Screen rect currently occupied by the mod's own window, so the navball marker can hide
+    // when it is covered by this window (it renders above the navball like the marker does).
+    public static bool TryGetWindowRect(out float2 windowPosition, out float2 windowSize) {
+        windowPosition = _windowPosition;
+        windowSize = _windowSize;
+        return _showWindow;
     }
 
     private static void DrawSpectrumInformationValue(string spectralType) {
@@ -655,6 +897,24 @@ internal static class OhMyStarsWindow {
         }
 
         return defaultValue;
+    }
+
+    private static WindowDisplay ReadTab(Dictionary<string, string> values, string key, WindowDisplay defaultValue) {
+        if(values.TryGetValue(key, out string? rawValue) &&
+           Enum.TryParse(rawValue, ignoreCase: true, out WindowDisplay parsed)) {
+            return NormalizeTab(parsed);
+        }
+
+        return defaultValue;
+    }
+
+    // SpectrumLegend is a sub-view of the Information tab, so it is persisted as its parent tab.
+    private static WindowDisplay NormalizeTab(WindowDisplay display) {
+        return display == WindowDisplay.SpectrumLegend ? WindowDisplay.Information : display;
+    }
+
+    private static WindowDisplay GetPersistableTab() {
+        return NormalizeTab(_display);
     }
 
     private static float ReadFloat(Dictionary<string, string> values, string key, float defaultValue) {

@@ -17,6 +17,7 @@ public class OhMyStarsEntryPoint {
         OhMyStarsSettingsStore.Init();
         OhMyStarsSettingsStore.Load();
         SaveLoadObserver.ApplyPatches(_harmony);
+        StarOrientationObserver.ApplyPatches(_harmony);
 
         StellariumRenderer.Init();
         OhMyStarsWindow.LoadSettings();
