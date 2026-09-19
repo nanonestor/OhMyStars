@@ -507,7 +507,7 @@ internal static class OhMyStarsWindow {
 
         if(isOriented) {
             ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Active Orientation");
+            ImGui.TextColored(in ConsoleStyle.Positive, "Active Orientation " + star.DisplayName);
         } else if(!hasVehicle) {
             ImGui.SameLine();
             ImGui.TextColored(in ConsoleStyle.TextMuted, "(No active vehicle)");
@@ -530,7 +530,7 @@ internal static class OhMyStarsWindow {
         }
         if(showNavballMarker) {
             ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Marker On");
+            ImGui.TextColored(in ConsoleStyle.Positive, "Marker On " + star.DisplayName);
         }
 
         ImGui.Dummy(new float2(0f, 4f));
