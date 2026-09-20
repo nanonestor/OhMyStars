@@ -1,6 +1,7 @@
 using Brutal.Logging;
 using HarmonyLib;
 using KSA;
+using System.Reflection;
 
 namespace OhMyStars;
 
@@ -13,6 +14,8 @@ internal static class StarOrientationObserver {
         harmony.CreateClassProcessor(typeof(SetStabilizationPatch)).Patch();
         harmony.CreateClassProcessor(typeof(SetEnumPatch)).Patch();
         harmony.CreateClassProcessor(typeof(ToggleEnumPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(KittenActionPatch)).Patch();
+        harmony.CreateClassProcessor(typeof(KittenMmuPatch)).Patch();
     }
 
     // Every standard mode button/keybind ultimately funnels through Vehicle.SetEnum/ToggleEnum
@@ -29,8 +32,12 @@ internal static class StarOrientationObserver {
     private static class PrepareWorkerPatch {
         static void Prefix(Vehicle __instance) {
             try {
-                if(__instance == Program.ControlledVehicle && OhMyStarsWindow.OrientedStarHip > 0) {
-                    OhMyStarsWindow.ApplyStarOrientation(__instance, OhMyStarsWindow.OrientedStarHip);
+                // Every vehicle re-applies its own remembered star orientation. Nothing is gated on
+                // Program.ControlledVehicle, so switching control neither transfers star orientation
+                // to the newly controlled vehicle nor discards the state the previous one was left in.
+                if(OhMyStarsWindow.TryGetOrientedStar(__instance, out int hip) &&
+                   !OhMyStarsWindow.ConsumeReapplySuppression(__instance)) {
+                    OhMyStarsWindow.ApplyStarOrientation(__instance, hip);
                 }
             } catch(Exception ex) {
                 DefaultCategory.Log.Warning($"[OhMyStars] PrepareWorker Prefix: {ex}");
@@ -48,6 +55,56 @@ internal static class StarOrientationObserver {
             } catch(Exception ex) {
                 DefaultCategory.Log.Warning($"[OhMyStars] TrackTarget Prefix: {ex}");
             }
+        }
+    }
+
+    // Kitten trim actions are the kitten-side equivalents of the game's attitude mode buttons.
+    // ManualTrim writes FlightComputer.AttitudeMode directly, bypassing every patched method above,
+    // so the kitten's star orientation must be dropped here or the mod would keep reapplying it.
+    // (HandleKittenAction is protected, hence the string method name.)
+    [HarmonyPatch(typeof(KittenEva), "HandleKittenAction")]
+    private static class KittenActionPatch {
+        static void Prefix(KittenEva __instance, KittenEvaAction action) {
+            try {
+                if(action is KittenEvaAction.ManualTrim or KittenEvaAction.RateTrim) {
+                    OhMyStarsWindow.ClearOrientedStar(__instance.FlightComputer);
+                }
+            } catch(Exception ex) {
+                DefaultCategory.Log.Warning($"[OhMyStars] KittenAction Prefix: {ex}");
+            }
+        }
+    }
+
+    // While a kitten's MMU is driving the flight computer (ApplyMmuAttitudeTarget runs every physics
+    // step and stomps any mod-set Custom target), the kitten's star orientation is parked via
+    // DetachOrientedStar, which keeps it remembered but stops the mod from fighting the MMU.
+    // When the MMU releases (ResetMmuAttitudeTarget), PrepareWorker re-engages the star. ReadOnlyVehicle
+    // returns the live Vehicle, so the patches below use it as the dictionary key; the exact instance
+    // type does not matter because the key is only ever compared by reference. All three involved
+    // members are non-public, hence the string method names.
+    [HarmonyPatch]
+    private static class KittenMmuPatch {
+        private static IEnumerable<MethodBase> TargetMethods() {
+            MethodBase? apply = AccessTools.Method(typeof(PhysicsBubble), "ApplyMmuAttitudeTarget");
+            if(apply != null)
+                yield return apply;
+
+            MethodBase? reset = AccessTools.Method(typeof(PhysicsBubble), "ResetMmuAttitudeTarget");
+            if(reset != null)
+                yield return reset;
+        }
+
+        private static bool Prefix(object[] __args) {
+            try {
+                Vehicle? vehicle = (__args?[0] as VehicleUpdateState)?.ReadOnlyVehicle;
+                if(vehicle != null) {
+                    OhMyStarsWindow.DetachOrientedStar(vehicle);
+                }
+            } catch(Exception ex) {
+                DefaultCategory.Log.Warning($"[OhMyStars] KittenMmu Prefix: {ex}");
+            }
+
+            return true;
         }
     }
 

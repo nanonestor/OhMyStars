@@ -27,6 +27,13 @@ internal static class NavballMarkerRenderer {
     private const float MarkerStrokeFrac = 0.09f; // MARKER_THK
     private const float MarkerDotFrac = 0.05f;    // MARKER_DOT_FRAC
 
+    // The rim arrow overlaps the marker glyph by this many degrees of off-axis angle, so the arrow
+    // is already visible while the marker is still fading in near the rim. The navball projects the
+    // off-axis angle onto the ball as sin(theta), so the threshold is sin(theta_rim - overlap).
+    private const float ArrowOverlapDegrees = 22f;
+    private static readonly float ArrowOverlapStartLen = MathF.Sin(
+        (MathF.Asin(MarkerRim) - ArrowOverlapDegrees * MathF.PI / 180f));
+
     // The glyph renders 30% smaller than the stock marker size, border thickness included.
     private const float GlyphScale = 0.7f;
     private const float GlyphBorderPx = MarkerBorderPx * GlyphScale;
@@ -73,14 +80,22 @@ internal static class NavballMarkerRenderer {
         if(!TryGetMarkerScreenDirection(vehicle, catalogDirection, out float3 screenDirection))
             return;
 
-        // markerPlacement (NavballMarkers.glsl) drops markers on the back hemisphere.
-        if(screenDirection.Z <= 0f)
-            return;
-
+        // markerPlacement (NavballMarkers.glsl) drops markers on the back hemisphere and past the
+        // ball rim, and fades them in over the last stretch inside the rim. To avoid a slow visual
+        // handoff, the rim arrow overlaps the marker: it is drawn whenever the marker is off the
+        // near side, past the rim, or within ArrowOverlap of the rim (the fade-in zone).
         float lenXY = MathF.Sqrt(
             screenDirection.X * screenDirection.X +
             screenDirection.Y * screenDirection.Y);
-        if(lenXY > MarkerRim)
+        bool onNearSide = screenDirection.Z > 0f;
+        bool withinRim = lenXY <= MarkerRim;
+        bool nearRim = lenXY >= ArrowOverlapStartLen;
+
+        if(!onNearSide || !withinRim || nearRim) {
+            DrawOffscreenArrow(ImGui.GetForegroundDrawList(), ballCenter, ballExtends, screenDirection);
+        }
+
+        if(!onNearSide || !withinRim)
             return;
 
         float fade = RimFade(lenXY);
@@ -239,6 +254,47 @@ internal static class NavballMarkerRenderer {
         float dotRadius = glyphSize * MarkerDotFrac;
         ImDrawListExtensions.AddCircleFilled(drawList, center, dotRadius + GlyphBorderPx, StellariumRenderer.ToLineColor(OutlineColor, fade), 0);
         ImDrawListExtensions.AddCircleFilled(drawList, center, dotRadius, StellariumRenderer.ToLineColor(FillColor, fade), 0);
+    }
+
+    // Draws an arrow on the navball rim pointing toward the off-screen (far-side) marker. The
+    // screen-space direction (X right, Y down) of the star tells us which way around the rim the
+    // arrow goes and which way it should point.
+    private static void DrawOffscreenArrow(ImDrawListPtr drawList, float2 ballCenter, float ballExtends, float3 screenDirection) {
+        float dirX = screenDirection.X;
+        float dirY = screenDirection.Y;
+        float dirLen = MathF.Sqrt(dirX * dirX + dirY * dirY);
+        if(dirLen <= 1e-5f)
+            return; // directly behind: no unique rim direction to point along
+
+        dirX /= dirLen;
+        dirY /= dirLen;
+
+        // Arrow points outward along the rim direction (toward the off-screen marker).
+        float2 fwd = new float2(dirX, dirY);
+        float2 right = new float2(-dirY, dirX);
+
+        float arrowLength = ballExtends * 0.20f;
+        float arrowWidth = ballExtends * 0.13f;
+
+        // Anchor the tip to just inside the ball edge so the whole arrow stays within the navball
+        // circle, with the tip touching the rim. Inset by half the outline so the colored point
+        // (not the dark outline) lands on the edge.
+        float tipRadius = ballExtends * 0.97f - arrowWidth * 0.5f;
+        float2 tip = ballCenter + fwd * tipRadius;
+        float2 baseCenter = tip - fwd * arrowLength;
+        float2 baseLeft = baseCenter + right * (arrowWidth * 0.5f);
+        float2 baseRight = baseCenter - right * (arrowWidth * 0.5f);
+
+        uint outline = StellariumRenderer.ToLineColor(OutlineColor, 1f);
+        uint fill = StellariumRenderer.ToLineColor(FillColor, 1f);
+
+        // Dark outline band under the colored fill, matching the marker styling. The outline is
+        // grown inward-only so it never extends past the tip (which is the navball edge).
+        float outlineGrow = MarkerBorderPx;
+        float2 oBaseLeft = baseLeft - fwd * outlineGrow + right * outlineGrow;
+        float2 oBaseRight = baseRight - fwd * outlineGrow - right * outlineGrow;
+        ImDrawListExtensions.AddTriangleFilled(drawList, tip, oBaseLeft, oBaseRight, outline);
+        ImDrawListExtensions.AddTriangleFilled(drawList, tip, baseLeft, baseRight, fill);
     }
 
     // Small centered label below the glyph, at the game's interface text size, with the same

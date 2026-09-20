@@ -1,4 +1,5 @@
 using Brutal.ImGuiApi;
+using Brutal.Logging;
 using Brutal.Numerics;
 using KSA;
 using System.Globalization;
@@ -40,10 +41,39 @@ internal static class OhMyStarsWindow {
     private static WindowDisplay _display = WindowDisplay.Settings;
     private static string? _selectedConstellationId;
     private static int _selectedStarHip;
-    private static int _orientedStarHip;
     private static bool _showStarPointer;
     private static float2 _windowPosition;
     private static float2 _windowSize;
+
+    // Per-vehicle Information tab selection: each vehicle remembers the constellation/star the user
+    // last had selected while controlling it, so switching control restores that vehicle's selection
+    // instead of leaving a stale one behind. Keyed by vehicle; vehicles with no entry fall back to
+    // the global selection.
+    private static readonly Dictionary<Vehicle, (string? ConstellationId, int StarHip)> _vehicleSelections = new();
+    private static Vehicle? _lastSelectionVehicle;
+
+    // Per-vehicle star orientation memory: each vehicle (regular vessel or kitten) independently
+    // remembers whether the mod's star orientation mode is engaged on it and which star it tracks.
+    // The game's own attitude modes are already per-vehicle state on each FlightComputer; this map
+    // is the mod-side equivalent, so switching control neither transfers star orientation to another
+    // vehicle nor loses the state a vehicle was left in.
+    private static readonly Dictionary<Vehicle, int> _orientedVehicles = new();
+
+    // The attitude mode a vehicle was in when star orientation got engaged on it. Pressing the
+    // Orient to Star button again while star orientation is still active on that vehicle restores
+    // this previous mode, making the button a toggle back out of the mod's mode.
+    private static readonly Dictionary<Vehicle, PreviousAttitudeMode> _previousAttitudeModes = new();
+
+    // Vehicles whose star reapply is suppressed for one PrepareWorker pass, so a toggle-off restore
+    // gets a chance to settle before the game recomputes AttitudeTarget from the restored mode.
+    private static readonly HashSet<Vehicle> _suppressReapply = new();
+
+    private sealed record PreviousAttitudeMode {
+        public required FlightComputerAttitudeMode AttitudeMode;
+        public required VehicleReferenceFrame AttitudeFrame;
+        public required FlightComputerAttitudeTrackTarget AttitudeTrackTarget;
+        public required double3 CustomAttitudeTarget;
+    }
 
     private static readonly float2 DefaultWindowSize = new float2(860f, 1000f);
 
@@ -399,6 +429,27 @@ internal static class OhMyStarsWindow {
             return;
         }
 
+        // On a control switch, stash the outgoing vehicle's selection and load the incoming
+        // vehicle's remembered selection (or fall back to its oriented star if it has one).
+        Vehicle? controlledVehicle = Program.ControlledVehicle;
+        if(!ReferenceEquals(controlledVehicle, _lastSelectionVehicle)) {
+            if(_lastSelectionVehicle != null) {
+                _vehicleSelections[_lastSelectionVehicle] = (_selectedConstellationId, _selectedStarHip);
+            }
+
+            if(controlledVehicle != null) {
+                if(_vehicleSelections.TryGetValue(controlledVehicle, out var saved) &&
+                   FindConstellationIndex(constellations, saved.ConstellationId) >= 0) {
+                    _selectedConstellationId = saved.ConstellationId;
+                    _selectedStarHip = saved.StarHip;
+                } else if(_orientedVehicles.TryGetValue(controlledVehicle, out int orientedHip) && orientedHip > 0) {
+                    SelectStar(constellations, orientedHip);
+                }
+            }
+
+            _lastSelectionVehicle = controlledVehicle;
+        }
+
         int selectedConstellationIndex = FindConstellationIndex(constellations, _selectedConstellationId);
         if(selectedConstellationIndex < 0) {
             selectedConstellationIndex = 0;
@@ -543,54 +594,191 @@ internal static class OhMyStarsWindow {
             SaveSettings();
         }
         ConsoleWidgets.EndRow();
-    }
 
-    public static int OrientedStarHip => _orientedStarHip;
+        // Persist the current selection onto the controlled vehicle so it is remembered across
+        // control switches even when the user only browses without switching away first.
+        if(vehicle != null) {
+            _vehicleSelections[vehicle] = (_selectedConstellationId, _selectedStarHip);
+        }
+    }
 
     public static int SelectedStarHip => _selectedStarHip;
 
+    public static bool TryGetOrientedStar(Vehicle vehicle, out int hip) {
+        hip = 0;
+        return vehicle != null && _orientedVehicles.TryGetValue(vehicle, out hip) && hip > 0;
+    }
+
+    // Clears every remembered star orientation (save/load reset). Flight computer fields are not
+    // touched here: on a fresh load the vehicles themselves are new instances anyway.
     public static void ClearOrientedStar() {
-        ClearOrientedStar(null);
+        _orientedVehicles.Clear();
+        _previousAttitudeModes.Clear();
+        _suppressReapply.Clear();
     }
 
-    // Called from the flight computer patches whenever the game itself changes attitude mode.
-    // CustomAttitudeTarget holds our star-pointing angles while AttitudeTrackTarget is Custom, but
-    // the engine reinterprets that same field as an angular rate once the mode becomes None (rate-hold),
-    // so it must be zeroed out whenever we stop being the ones driving attitude. AttitudeTarget (the
-    // resolved quaternion) also needs zeroing: for named track targets the engine only overwrites it
-    // when it can resolve a direction (e.g. Prograde with zero velocity resolves to nothing), otherwise
-    // it silently keeps whatever quaternion was last there - our star-pointing one - and the vehicle
-    // keeps pointing at the star even though the selected mode says otherwise.
+    // One-shot check used by the PrepareWorker patch: true once per suppressed vehicle, then rearmed.
+    public static bool ConsumeReapplySuppression(Vehicle vehicle) {
+        return vehicle != null && _suppressReapply.Remove(vehicle);
+    }
+
+    // Called from the flight computer patches whenever the game itself changes attitude mode on a
+    // vehicle, so that vehicle leaves the mod's star orientation mode. CustomAttitudeTarget holds
+    // our star-pointing angles while AttitudeTrackTarget is Custom, but the engine reinterprets that
+    // same field as an angular rate once the mode becomes None (rate-hold), so it must be zeroed out
+    // whenever we stop being the ones driving attitude. AttitudeTarget (the resolved quaternion) also
+    // needs zeroing: for named track targets the engine only overwrites it when it can resolve a
+    // direction (e.g. Prograde with zero velocity resolves to nothing), otherwise it silently keeps
+    // whatever quaternion was last there - our star-pointing one - and the vehicle keeps pointing at
+    // the star even though the selected mode says otherwise.
     public static void ClearOrientedStar(FlightComputer? flightComputer) {
-        if(_orientedStarHip > 0 && flightComputer != null) {
-            flightComputer.CustomAttitudeTarget = double3.Zero;
-            flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+        if(flightComputer == null)
+            return;
+
+        Vehicle? owner = null;
+        foreach(KeyValuePair<Vehicle, int> pair in _orientedVehicles) {
+            if(ReferenceEquals(pair.Key.FlightComputer, flightComputer)) {
+                owner = pair.Key;
+                break;
+            }
         }
-        _orientedStarHip = 0;
+
+        if(owner == null)
+            return;
+
+        // Only treat this as "leaving star orientation" when the flight computer is actually still
+        // in the mod's mode. If it is not (e.g. a queued input from a restore, or an unrelated mode
+        // change), the dict entry may legitimately belong to a star the vehicle is still tracking and
+        // must not be wiped.
+        bool inModMode = flightComputer.AttitudeTrackTarget == FlightComputerAttitudeTrackTarget.Custom &&
+                         flightComputer.AttitudeFrame == VehicleReferenceFrame.EclBody;
+        DefaultCategory.Log.Info(
+            $"[OhMyStars] ClearOrientedStar fc owner={owner.Id} inModMode={inModMode} track={flightComputer.AttitudeTrackTarget} frame={flightComputer.AttitudeFrame} mode={flightComputer.AttitudeMode}");
+        if(!inModMode)
+            return;
+
+        _orientedVehicles.Remove(owner);
+        _previousAttitudeModes.Remove(owner);
+        flightComputer.CustomAttitudeTarget = double3.Zero;
+        flightComputer.AttitudeTarget = AttitudeTarget.Zero;
     }
 
+    // Removes the vehicle from the mod's star orientation mode without touching its flight computer,
+    // remembering the attitude mode it was in when star orientation got engaged so a later re-entry
+    // can restore the mode in effect at that time (not the one being left behind now).
+    public static void DetachOrientedStar(Vehicle vehicle) {
+        _orientedVehicles.Remove(vehicle);
+        if(_previousAttitudeModes.TryGetValue(vehicle, out PreviousAttitudeMode? previous)) {
+            _previousAttitudeModes[vehicle] = SnapshotAttitudeMode(vehicle.FlightComputer) with {
+                AttitudeTrackTarget = previous.AttitudeTrackTarget,
+                CustomAttitudeTarget = previous.CustomAttitudeTarget
+            };
+        }
+    }
+
+    // Whether the mod's star orientation is currently assigned to the controlled vehicle for the
+    // given star. The dictionary is the source of truth: once the mod engages a vehicle's mode the
+    // entry is what keeps it oriented, and the game buttons are the only thing that removes it.
     public static bool IsOrientedToStar(int hip) {
-        if(hip <= 0 || _orientedStarHip != hip)
+        if(hip <= 0)
             return false;
 
         Vehicle? vehicle = Program.ControlledVehicle;
         if(vehicle == null)
             return false;
 
-        FlightComputer fc = vehicle.FlightComputer;
-        return fc.AttitudeMode == FlightComputerAttitudeMode.Auto &&
-               fc.AttitudeTrackTarget == FlightComputerAttitudeTrackTarget.Custom &&
-               fc.AttitudeFrame == VehicleReferenceFrame.EclBody;
+        return _orientedVehicles.TryGetValue(vehicle, out int orientedHip) && orientedHip == hip;
     }
 
-    // One-way: engages star orientation for the given star. Leaving star orientation is done via the
-    // game's own standard mode buttons/keybinds, which the flight computer patches detect and react to.
+    private static PreviousAttitudeMode SnapshotAttitudeMode(FlightComputer flightComputer) {
+        return new PreviousAttitudeMode {
+            AttitudeMode = flightComputer.AttitudeMode,
+            AttitudeFrame = flightComputer.AttitudeFrame,
+            AttitudeTrackTarget = flightComputer.AttitudeTrackTarget,
+            CustomAttitudeTarget = flightComputer.CustomAttitudeTarget
+        };
+    }
+
+    // Restores the previous attitude mode by enqueuing the exact same input the game enqueues when
+    // the player presses a mode button: a FlightComputerInputData on FlightComputerInputBuffer. The
+    // game's own Apply path then runs SetEnum, plays the sound, and queues the flight-computer
+    // config reset - identical to a real button press.
+    private static void RestorePreviousAttitudeMode(Vehicle vehicle, PreviousAttitudeMode previous) {
+        // A named track target maps 1:1 to the mode button's enum value; rate-hold is the frame
+        // button for the frame the vehicle was holding in.
+        Enum enumValue = previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.None &&
+                         previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.Custom
+            ? (Enum)previous.AttitudeTrackTarget
+            : previous.AttitudeFrame;
+
+        InputEvents.FlightComputerInputBuffer.Add(new InputEvents.FlightComputerInputData {
+            Vehicle = vehicle,
+            Toggle = false,
+            EnumValue = enumValue,
+            Sound = null
+        });
+
+        // In rate-hold and custom modes CustomAttitudeTarget carries the stored angular rate or the
+        // euler angles respectively; SetEnum leaves the field alone, so restore it on top.
+        if(previous.AttitudeTrackTarget is FlightComputerAttitudeTrackTarget.None or FlightComputerAttitudeTrackTarget.Custom) {
+            vehicle.FlightComputer.CustomAttitudeTarget = previous.CustomAttitudeTarget;
+        }
+
+        // The buttons always leave Auto engaged for these paths; restore Manual if that is what the
+        // vehicle was in before the mod took over.
+        if(previous.AttitudeMode == FlightComputerAttitudeMode.Manual) {
+            InputEvents.FlightComputerInputBuffer.Add(new InputEvents.FlightComputerInputData {
+                Vehicle = vehicle,
+                Toggle = false,
+                EnumValue = FlightComputerAttitudeMode.Manual,
+                Sound = null
+            });
+        }
+    }
+
+    // Toggles star orientation for the given star on the currently controlled vehicle. Pressing the
+    // button while the vehicle is still in the mod's orientation mode restores the attitude mode the
+    // vehicle had when star orientation was engaged. Leaving star orientation any other way is done
+    // via the game's own standard mode buttons/keybinds, which the flight computer patches detect
+    // and react to per vehicle.
     public static void ToggleOrientToStar(int hip) {
         Vehicle? vehicle = Program.ControlledVehicle;
-        if(vehicle == null || hip <= 0 || IsOrientedToStar(hip))
+        if(vehicle == null || hip <= 0)
             return;
 
-        _orientedStarHip = hip;
+        // Pressing the button on the star the vehicle is already oriented to toggles the mod's mode
+        // off, restoring whatever attitude mode the vehicle had when star orientation was engaged.
+        if(IsOrientedToStar(hip)) {
+            DefaultCategory.Log.Info($"[OhMyStars] ToggleOrientToStar disengage vehicle={vehicle.Id} hip={hip}");
+            _orientedVehicles.Remove(vehicle);
+            _suppressReapply.Add(vehicle);
+            if(_previousAttitudeModes.TryGetValue(vehicle, out PreviousAttitudeMode? previous)) {
+                _previousAttitudeModes.Remove(vehicle);
+                RestorePreviousAttitudeMode(vehicle, previous);
+            }
+            return;
+        }
+
+        // Engaging (or retargeting to a different star). Snapshot the attitude mode in effect right
+        // now, before the mod takes over - but if the vehicle is already star-oriented, its current
+        // mode is the mod's own Custom/EclBody mode, which is meaningless as a "previous mode", so
+        // keep the snapshot taken when the mod first engaged instead.
+        bool alreadyOriented = _orientedVehicles.ContainsKey(vehicle);
+        if(!alreadyOriented) {
+            _previousAttitudeModes[vehicle] = SnapshotAttitudeMode(vehicle.FlightComputer);
+        } else if(!_previousAttitudeModes.ContainsKey(vehicle)) {
+            // Already oriented but no snapshot survived (e.g. after a save load): fall back to a
+            // plain EclBody rate-hold so toggling off always has somewhere sane to land.
+            _previousAttitudeModes[vehicle] = new PreviousAttitudeMode {
+                AttitudeMode = FlightComputerAttitudeMode.Auto,
+                AttitudeFrame = VehicleReferenceFrame.EclBody,
+                AttitudeTrackTarget = FlightComputerAttitudeTrackTarget.None,
+                CustomAttitudeTarget = double3.Zero
+            };
+        }
+
+        _orientedVehicles[vehicle] = hip;
+        DefaultCategory.Log.Info($"[OhMyStars] ToggleOrientToStar engage vehicle={vehicle.Id} hip={hip} (alreadyOriented={alreadyOriented})");
         ApplyStarOrientation(vehicle, hip);
     }
 
@@ -620,6 +808,34 @@ internal static class OhMyStarsWindow {
         double pitch = Math.Asin(Math.Clamp(dy, -1.0, 1.0));
         double yaw = Math.Atan2(-dz, dx);
         double roll = 0.0;
+
+        // Kittens face along body +X like regular vehicles, but their body up axis is -Z instead of
+        // +Z (see KittenServoPrecomp/PoseIntegratorCallbacks: KittenBodyForwardAxisBody=+X,
+        // KittenBodyUpAxisBody=-Z). So for kittens build a look-at frame with -Z up instead and
+        // convert it back to EclBody euler angles using the game's own helpers.
+        if(vehicle is KittenEva) {
+            double3 fwd = new double3(dx, dy, dz);
+            double3 upHint = new double3(0.0, 0.0, -1.0);
+            double3 right = double3.Cross(upHint, fwd);
+            double rightLen = VectorMath.Length(right);
+            if(rightLen <= 1e-12) {
+                // Star is along the up hint; yaw straight at it with a zeroed-out right axis.
+                pitch = -Math.Sign(dz) * Math.PI / 2.0;
+                right = double3.UnitX;
+            } else {
+                right /= rightLen;
+            }
+            double3 up = double3.Cross(fwd, right);
+            doubleQuat desired2Frame = doubleQuat.CreateFromRotationMatrix(new double4x4(
+                fwd.X, fwd.Y, fwd.Z, 0.0,
+                right.X, right.Y, right.Z, 0.0,
+                up.X, up.Y, up.Z, 0.0,
+                0.0, 0.0, 0.0, 1.0));
+            double3 euler = VehicleReferenceFrame.EclBody.QuaternionToEulerAngles(desired2Frame);
+            roll = euler.X;
+            yaw = euler.Y;
+            pitch = euler.Z;
+        }
 
         vehicle.FlightComputer.AttitudeMode = FlightComputerAttitudeMode.Auto;
         vehicle.FlightComputer.AttitudeFrame = VehicleReferenceFrame.EclBody;
@@ -739,6 +955,17 @@ internal static class OhMyStarsWindow {
         }
 
         return -1;
+    }
+
+    // Selects the given star and the constellation containing it in the Information tab.
+    private static void SelectStar(IReadOnlyList<ConstellationInformation> constellations, int hip) {
+        foreach(ConstellationInformation constellation in constellations) {
+            if(FindStarIndex(constellation.Stars, hip) >= 0) {
+                _selectedConstellationId = constellation.Id;
+                _selectedStarHip = hip;
+                return;
+            }
+        }
     }
 
     private static void DrawInformationValue(string label, string value) {
