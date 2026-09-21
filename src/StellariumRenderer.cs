@@ -15,6 +15,10 @@ internal unsafe static class StellariumRenderer {
     public static bool showStarNames = false;
     public static bool showAsterisms = true;
     public static bool showAsterismNames = true;
+    public static bool showRaDecGrid = false;
+    public static int decSpacingDegrees = 10;
+    public static bool showRaMinuteBands = false;
+    public static float gridLineThickness = 1f;
 
     public static float iauLineOpacity = 1f;
     public static float3 iauLineColor = new float3(1f, 1f, 1f);

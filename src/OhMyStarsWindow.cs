@@ -23,6 +23,10 @@ internal static class OhMyStarsWindow {
         public const bool ShowAsterismNames = true;
         public const bool ShowNavballMarker = false;
         public const bool ShowNavballMarkerLabel = true;
+        public const bool ShowRaDecGrid = false;
+        public const int DecSpacingDegrees = 10;
+        public const bool ShowRaMinuteBands = false;
+        public const float GridLineThickness = 1f;
         public const WindowDisplay Tab = WindowDisplay.Settings;
         public const float IAULineOpacity = 0.4f;
         public static readonly float3 IAULineColor = new float3(1f, 1f, 1f);
@@ -41,6 +45,7 @@ internal static class OhMyStarsWindow {
     private static bool _skyCultureExpanded = false;
     private static bool _asterismsExpanded = false;
     private static bool _iauConstellationsExpanded = false;
+    private static bool _raDecGridExpanded = false;
     private static bool _starPointerExpanded = false;
     private static bool _alignmentExpanded = false;
     private static WindowDisplay _display = WindowDisplay.Settings;
@@ -112,6 +117,11 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.showAsterismNames = ReadBool(values, "ShowAsterismNames", Defaults.ShowAsterismNames);
         NavballMarkerRenderer.showNavballMarker = ReadBool(values, "ShowNavballMarker", Defaults.ShowNavballMarker);
         NavballMarkerRenderer.showMarkerLabel = ReadBool(values, "ShowNavballMarkerLabel", Defaults.ShowNavballMarkerLabel);
+        StellariumRenderer.showRaDecGrid = ReadBool(values, "ShowRaDecGrid", Defaults.ShowRaDecGrid);
+        int decSpacing = ReadInt(values, "DecSpacingDegrees", Defaults.DecSpacingDegrees);
+        StellariumRenderer.decSpacingDegrees = decSpacing is 1 or 5 ? decSpacing : Defaults.DecSpacingDegrees;
+        StellariumRenderer.showRaMinuteBands = ReadBool(values, "ShowRaMinuteBands", Defaults.ShowRaMinuteBands);
+        StellariumRenderer.gridLineThickness = ReadFloat(values, "GridLineThickness", Defaults.GridLineThickness);
 
         _display = ReadTab(values, "Tab", Defaults.Tab);
 
@@ -154,6 +164,10 @@ internal static class OhMyStarsWindow {
             $"ShowAsterismNames={StellariumRenderer.showAsterismNames.ToString(CultureInfo.InvariantCulture)}",
             $"ShowNavballMarker={NavballMarkerRenderer.showNavballMarker.ToString(CultureInfo.InvariantCulture)}",
             $"ShowNavballMarkerLabel={NavballMarkerRenderer.showMarkerLabel.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowRaDecGrid={StellariumRenderer.showRaDecGrid.ToString(CultureInfo.InvariantCulture)}",
+            $"DecSpacingDegrees={StellariumRenderer.decSpacingDegrees.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowRaMinuteBands={StellariumRenderer.showRaMinuteBands.ToString(CultureInfo.InvariantCulture)}",
+            $"GridLineThickness={StellariumRenderer.gridLineThickness.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineOpacity={StellariumRenderer.iauLineOpacity.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineColorR={StellariumRenderer.iauLineColor.X.ToString(CultureInfo.InvariantCulture)}",
             $"IAULineColorG={StellariumRenderer.iauLineColor.Y.ToString(CultureInfo.InvariantCulture)}",
@@ -181,6 +195,10 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.showAsterismNames = Defaults.ShowAsterismNames;
         NavballMarkerRenderer.showNavballMarker = Defaults.ShowNavballMarker;
         NavballMarkerRenderer.showMarkerLabel = Defaults.ShowNavballMarkerLabel;
+        StellariumRenderer.showRaDecGrid = Defaults.ShowRaDecGrid;
+        StellariumRenderer.decSpacingDegrees = Defaults.DecSpacingDegrees;
+        StellariumRenderer.showRaMinuteBands = Defaults.ShowRaMinuteBands;
+        StellariumRenderer.gridLineThickness = Defaults.GridLineThickness;
         _display = Defaults.Tab;
         StellariumRenderer.iauLineOpacity = Defaults.IAULineOpacity;
         StellariumRenderer.iauLineColor = Defaults.IAULineColor;
@@ -264,11 +282,20 @@ internal static class OhMyStarsWindow {
         }
         ConsoleWidgets.EndRow();
 
-        ImGui.Separator();
+        bool showRaDecGridTop = StellariumRenderer.showRaDecGrid;
+        ConsoleWidgets.BeginRow("Show RA/Dec Grid");
+        if(ConsoleWidgets.Checkbox("ShowRaDecGrid", ref showRaDecGridTop, pending: false)) {
+            StellariumRenderer.showRaDecGrid = showRaDecGridTop;
+            SaveSettings();
+        }
+        ConsoleWidgets.EndRow();
+
+        DrawThickSeparator();
         DrawSectionHeader("Sky Culture", "Selects the Stellarium sky culture that provides the asterism lines, constellation names, and star labels.", ref _skyCultureExpanded);
 
         if(_skyCultureExpanded) {
             ImGui.Separator();
+            BeginEntryIndent();
 
             SkyCulture? activeSkyCulture = SkyCulturesRenderer.ActiveSkyCulture;
             string previewName = activeSkyCulture?.Name ?? "None";
@@ -298,13 +325,15 @@ internal static class OhMyStarsWindow {
 
                 ImGui.EndCombo();
             }
+            EndEntryIndent();
         }
 
-        ImGui.Separator();
+        DrawThickSeparator();
         DrawSectionHeader("Asterisms", "Asterisms are culturally defined patterns that connect selected stars into familiar shapes and constellations.", ref _asterismsExpanded);
 
         if(_asterismsExpanded) {
             ImGui.Separator();
+            BeginEntryIndent();
 
             float asterismLineOpacity = StellariumRenderer.asterismLineOpacity;
             ConsoleWidgets.BeginRow("Asterism Line Brightness");
@@ -322,13 +351,15 @@ internal static class OhMyStarsWindow {
                     StellariumRenderer.asterismLineColor = color;
                     SaveSettings();
                 });
+            EndEntryIndent();
         }
 
-        ImGui.Separator();
+        DrawThickSeparator();
         DrawSectionHeader("IAU Constellations", "The International Astronomical Union's modern 88-constellation scheme and its standardized constellation boundaries.", ref _iauConstellationsExpanded);
 
         if(_iauConstellationsExpanded) {
             ImGui.Separator();
+            BeginEntryIndent();
 
             float iauLineOpacity = StellariumRenderer.iauLineOpacity;
             ConsoleWidgets.BeginRow("IAU Line Brightness");
@@ -346,21 +377,63 @@ internal static class OhMyStarsWindow {
                     StellariumRenderer.iauLineColor = color;
                     SaveSettings();
                 });
+            EndEntryIndent();
         }
 
-        ImGui.Separator();
-        DrawSectionHeader("Star Pointer", "Appearance of the line drawn from this window to the star selected on the Information tab while its Star Pointer is enabled. The pointer stays visible on every tab.", ref _starPointerExpanded);
+        DrawThickSeparator();
+        DrawSectionHeader("RA/Dec Grid", "Draws celestial coordinate lines of right ascension and declination over the sky background.", ref _raDecGridExpanded);
+
+        if(_raDecGridExpanded) {
+            ImGui.Separator();
+            BeginEntryIndent();
+
+            ImGui.Text("Dec Spacing (degrees)");
+            DrawDecSpacingButton(1);
+            ImGui.SameLine();
+            DrawDecSpacingButton(5);
+            ImGui.SameLine();
+            DrawDecSpacingButton(10);
+
+            if(StellariumRenderer.showRaMinuteBands) {
+                if(ConsoleWidgets.PositiveButton("RA 10-Minute Bands", "RaMinuteBands", default)) {
+                    StellariumRenderer.showRaMinuteBands = false;
+                    SaveSettings();
+                }
+                ImGui.SameLine();
+                ImGui.TextColored(in ConsoleStyle.Positive, "Bands On");
+            } else {
+                if(ConsoleWidgets.Button("RA 10-Minute Bands", "RaMinuteBands", default)) {
+                    StellariumRenderer.showRaMinuteBands = true;
+                    SaveSettings();
+                }
+            }
+
+            float gridLineThickness = StellariumRenderer.gridLineThickness;
+            ConsoleWidgets.BeginRow("Grid Line Thickness");
+            if(ConsoleWidgets.SliderFloat("GridLineThickness", ref gridLineThickness, 0.5f, 5f, gridLineThickness.ToString("F1", CultureInfo.InvariantCulture), pending: false)) {
+                StellariumRenderer.gridLineThickness = gridLineThickness;
+                SaveSettings();
+            }
+            ConsoleWidgets.EndRow();
+            EndEntryIndent();
+        }
+
+        DrawThickSeparator();
+        DrawSectionHeader("Star Pointer", "Point from the window to the selected star.", ref _starPointerExpanded);
 
         if(_starPointerExpanded) {
             ImGui.Separator();
+            BeginEntryIndent();
             DrawStarPointerSection();
+            EndEntryIndent();
         }
 
-        ImGui.Separator();
-        DrawSectionHeader("Alignment", "Fine-tunes the rotation of the asterism and IAU constellation lines so they match the game's star field.", ref _alignmentExpanded);
+        DrawThickSeparator();
+        DrawSectionHeader("Alignment", "Fine-tunes the rotation of the asterism and IAU constellation lines - mainly a debug feature.", ref _alignmentExpanded);
 
         if(_alignmentExpanded) {
             ImGui.Separator();
+            BeginEntryIndent();
 
             DrawAlignmentAxisRow(
                 "Rotation X",
@@ -382,6 +455,7 @@ internal static class OhMyStarsWindow {
                 "Fine-tunes the alignment of the lines with the game's star field by rotating around the Z axis.",
                 () => StellariumRenderer.alignmentRotationZDegrees,
                 value => StellariumRenderer.alignmentRotationZDegrees = value);
+            EndEntryIndent();
         }
 
         ImGui.Dummy(new float2(0f, 4f));
@@ -395,9 +469,45 @@ internal static class OhMyStarsWindow {
         ImGui.End();
     }
 
+    // Thicker category rule replacing a plain Separator between sections. ImGui's Separator draws
+    // a 1px hairline on the line at the current cursor Y and then advances past it; this paints a
+    // 3px rule centered on that same separator line position, so it sits exactly where the normal
+    // separator would instead of overlapping the widgets below.
+    private static void DrawThickSeparator() {
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        float2 pos = ImGui.GetCursorScreenPos();
+        float startX = pos.X + ImGui.GetCursorPosX();
+        float endX = startX + ImGui.GetContentRegionAvail().X;
+        float y = pos.Y;
+        uint color = ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32);
+
+        drawList.AddLine(new float2(startX, y), new float2(endX, y), color, 3f);
+
+        // Reserve the separator's vertical slot so the widgets below start below the rule.
+        ImGui.Dummy(new float2(0f, 3f));
+    }
+
+    // Declination band spacing buttons: the active spacing is drawn as a filled positive button,
+    // the others as plain buttons; clicking one sets how many degrees apart the Dec parallels are.
+    private static void DrawDecSpacingButton(int spacingDegrees) {
+        string label = spacingDegrees.ToString(CultureInfo.InvariantCulture);
+        bool active = StellariumRenderer.decSpacingDegrees == spacingDegrees;
+        bool clicked = active
+            ? ConsoleWidgets.PositiveButton(label, "DecSpacing" + label, default)
+            : ConsoleWidgets.Button(label, "DecSpacing" + label, default);
+
+        if(clicked && !active) {
+            StellariumRenderer.decSpacingDegrees = spacingDegrees;
+            SaveSettings();
+        }
+    }
+
     // Collapsible section header: a button that toggles the items below it on and off, in the same
     // style the Alignment section uses ("v" expanded, ">" collapsed), plus the "(?)" help tooltip.
+    // The button is indented two text spaces from the left edge to visually set it apart.
     private static void DrawSectionHeader(string title, string helpText, ref bool expanded) {
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+
         if(ImGui.Button(expanded ? title + " v" : title + " >")) {
             expanded = !expanded;
         }
@@ -407,6 +517,18 @@ internal static class OhMyStarsWindow {
         if(ImGui.IsItemHovered(ImGuiHoveredFlags.None)) {
             ConsoleWidgets.Tooltip(helpText);
         }
+    }
+
+    // Indents every widget row inside an expanded category four text spaces from the left edge.
+    // ImGui.Indent shifts the cursor origin persistently (unlike a one-off SetCursorPosX), which is
+    // what makes it stick for ConsoleWidgets.BeginRow rows: BeginRowCore captures the cursor as the
+    // row origin and EndRow resets back to it, so a pre-BeginRow nudge would only survive one row.
+    private static float EntryIndentWidth => ImGui.CalcTextSize("    ").X;
+    private static void BeginEntryIndent() {
+        ImGui.Indent(EntryIndentWidth);
+    }
+    private static void EndEntryIndent() {
+        ImGui.Unindent(EntryIndentWidth);
     }
 
     // Star Pointer settings: one line from the nearest window corner or one from each of the two
@@ -1128,7 +1250,7 @@ internal static class OhMyStarsWindow {
 
         float value = getValue();
         bool changed = false;
-        
+
         ImGui.Text(rowLabel);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(100f);
@@ -1245,6 +1367,15 @@ internal static class OhMyStarsWindow {
     private static float ReadFloat(Dictionary<string, string> values, string key, float defaultValue) {
         if(values.TryGetValue(key, out string? rawValue) &&
            float.TryParse(rawValue, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out float parsed)) {
+            return parsed;
+        }
+
+        return defaultValue;
+    }
+
+    private static int ReadInt(Dictionary<string, string> values, string key, int defaultValue) {
+        if(values.TryGetValue(key, out string? rawValue) &&
+           int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)) {
             return parsed;
         }
 
