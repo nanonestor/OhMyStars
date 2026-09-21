@@ -1302,17 +1302,7 @@ internal static class OhMyStarsWindow {
     }
 
     private static string? GetSettingsFilePath() {
-        Mod? mod = ModLibrary.Find("OhMyStars");
-        if(mod is not null && mod != Mod.Empty && !string.IsNullOrWhiteSpace(mod.DirectoryPath)) {
-            return Path.Combine(mod.DirectoryPath, SettingsFileName);
-        }
-
-        string? assemblyDirectory = Path.GetDirectoryName(typeof(OhMyStarsWindow).Assembly.Location);
-        if(!string.IsNullOrWhiteSpace(assemblyDirectory)) {
-            return Path.Combine(assemblyDirectory, SettingsFileName);
-        }
-
-        return null;
+        return ModPaths.Combine(SettingsFileName);
     }
 
     private static Dictionary<string, string> ReadSettingsFile(string settingsPath) {

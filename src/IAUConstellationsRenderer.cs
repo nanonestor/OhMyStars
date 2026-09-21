@@ -9,14 +9,7 @@ internal static class IAUConstellationsRenderer {
     private static readonly List<Segment> segments = new();
 
     public static void Init() {
-        string userDocs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        string lines_in_20_path = Path.Combine(
-            userDocs,
-            "My Games",
-            "Kitten Space Agency",
-            "mods",
-            "OhMyStars",
-            "lines_in_20.txt");
+        string lines_in_20_path = ModPaths.Combine("lines_in_20.txt");
 
         LoadConstellationLines(lines_in_20_path);
     }

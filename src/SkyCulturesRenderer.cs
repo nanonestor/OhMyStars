@@ -125,24 +125,8 @@ public static class SkyCulturesRenderer {
         double3 Direction);
 
     public static void Init() {
-        string userDocs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-
-        string skyculturesPath = Path.Combine(
-            userDocs,
-            "My Games",
-            "Kitten Space Agency",
-            "mods",
-            "OhMyStars",
-            "skycultures");
-
-        string catalogPath = Path.Combine(
-            userDocs,
-            "My Games",
-            "Kitten Space Agency",
-            "mods",
-            "OhMyStars",
-            "athyg_32_reduced_m10.csv");
-
+        string skyculturesPath = ModPaths.Combine("skycultures");
+        string catalogPath = ModPaths.Combine("athyg_32_reduced_m10.csv");
 
         LoadRenderedStarDirections();
         LoadSkyCultures(skyculturesPath);
