@@ -32,11 +32,17 @@ internal static class StarOrientationObserver {
     private static class PrepareWorkerPatch {
         static void Prefix(Vehicle __instance) {
             try {
+                // A pending disengage runs the rate-hold on this tick in place of the star reapply,
+                // so the mode change happens atomically on the mod's own pass with no stale write.
+                if(OhMyStarsWindow.IsDisengagePending(__instance)) {
+                    OhMyStarsWindow.DisengagePending(__instance);
+                    return;
+                }
+
                 // Every vehicle re-applies its own remembered star orientation. Nothing is gated on
                 // Program.ControlledVehicle, so switching control neither transfers star orientation
                 // to the newly controlled vehicle nor discards the state the previous one was left in.
-                if(OhMyStarsWindow.TryGetOrientedStar(__instance, out int hip) &&
-                   !OhMyStarsWindow.ConsumeReapplySuppression(__instance)) {
+                if(OhMyStarsWindow.TryGetOrientedStar(__instance, out int hip)) {
                     OhMyStarsWindow.ApplyStarOrientation(__instance, hip);
                 }
             } catch(Exception ex) {

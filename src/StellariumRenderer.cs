@@ -27,6 +27,16 @@ internal unsafe static class StellariumRenderer {
     public static float alignmentRotationYDegrees = 0f;
     public static float alignmentRotationZDegrees = 0f;
 
+    // Star pointer appearance: a single line from the nearest window corner, or one line from each
+    // of the two nearest corners; line color, and a rainbow override that cycles the color through
+    // the spectrum over time.
+    public static bool starPointerDualLines = false;
+    public static float3 starPointerColor = new float3(1f, 1f, 1f);
+    public static bool starPointerRainbow = false;
+
+    // Seconds for the rainbow override to complete one full trip through the visible spectrum.
+    private const double RainbowCycleSeconds = 4d;
+
     private static readonly List<CelestialOccluder> celestialOccluders = new();
 
     private readonly record struct CelestialOccluder(double3 Center, double Radius);
@@ -108,8 +118,17 @@ internal unsafe static class StellariumRenderer {
         if(!TryGetStarPointerTarget(camera, position, out float2 target))
             return;
 
+        ImColor8 lineColor = ToLineColor(starPointerRainbow ? GetRainbowPointerColor() : starPointerColor, 1f);
+
+        if(starPointerDualLines) {
+            GetTwoNearestWindowCorners(windowPosition, windowSize, target, out float2 firstCorner, out float2 secondCorner);
+            ImDrawListExtensions.AddLine(drawList, firstCorner, target, lineColor, 1.5f);
+            ImDrawListExtensions.AddLine(drawList, secondCorner, target, lineColor, 1.5f);
+            return;
+        }
+
         float2 anchor = GetNearestWindowCorner(windowPosition, windowSize, target);
-        ImDrawListExtensions.AddLine(drawList, anchor, target, new ImColor8(255, 255, 255, 255), 1.5f);
+        ImDrawListExtensions.AddLine(drawList, anchor, target, lineColor, 1.5f);
     }
 
     private static bool TryGetStarPointerTarget(Camera camera, double3 position, out float2 target) {
@@ -166,6 +185,56 @@ internal unsafe static class StellariumRenderer {
         }
 
         return nearest;
+    }
+
+    // The two window corners closest to the pointer target, for the two-lines pointer mode.
+    private static void GetTwoNearestWindowCorners(float2 windowPosition, float2 windowSize, float2 target, out float2 nearest, out float2 secondNearest) {
+        float2 topLeft = windowPosition;
+        float2 topRight = new float2(windowPosition.X + windowSize.X, windowPosition.Y);
+        float2 bottomLeft = new float2(windowPosition.X, windowPosition.Y + windowSize.Y);
+        float2 bottomRight = windowPosition + windowSize;
+
+        nearest = topLeft;
+        secondNearest = topRight;
+        float nearestDistanceSquared = DistanceSquared(topLeft, target);
+        float secondDistanceSquared = DistanceSquared(topRight, target);
+        if(secondDistanceSquared < nearestDistanceSquared) {
+            (nearest, secondNearest) = (secondNearest, nearest);
+            (nearestDistanceSquared, secondDistanceSquared) = (secondDistanceSquared, nearestDistanceSquared);
+        }
+
+        foreach(float2 corner in new[] { bottomLeft, bottomRight }) {
+            float distanceSquared = DistanceSquared(corner, target);
+            if(distanceSquared < nearestDistanceSquared) {
+                secondNearest = nearest;
+                secondDistanceSquared = nearestDistanceSquared;
+                nearest = corner;
+                nearestDistanceSquared = distanceSquared;
+            } else if(distanceSquared < secondDistanceSquared) {
+                secondNearest = corner;
+                secondDistanceSquared = distanceSquared;
+            }
+        }
+    }
+
+    // Cycles the pointer color through the rainbow spectrum (roygbiv) once per RainbowCycleSeconds;
+    // a hue sweep at full saturation and value passes red, orange, yellow, green, blue, indigo, violet.
+    private static float3 GetRainbowPointerColor() {
+        double cycle = ImGui.GetTime() / RainbowCycleSeconds;
+        float hue = (float)(cycle - System.Math.Floor(cycle));
+
+        float sector = hue * 6f;
+        int wedge = (int)sector;
+        float fraction = sector - wedge;
+
+        return wedge switch {
+            0 => new float3(1f, fraction, 0f),
+            1 => new float3(1f - fraction, 1f, 0f),
+            2 => new float3(0f, 1f, fraction),
+            3 => new float3(0f, 1f - fraction, 1f),
+            4 => new float3(fraction, 0f, 1f),
+            _ => new float3(1f, 0f, 1f - fraction),
+        };
     }
 
     private static float DistanceSquared(float2 a, float2 b) {

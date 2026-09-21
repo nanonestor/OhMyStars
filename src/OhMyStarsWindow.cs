@@ -31,12 +31,17 @@ internal static class OhMyStarsWindow {
         public const float AlignmentRotationXDegrees = 0f;
         public const float AlignmentRotationYDegrees = 0f;
         public const float AlignmentRotationZDegrees = 0f;
+        public const bool StarPointerDualLines = false;
+        public static readonly float3 StarPointerColor = new float3(1f, 1f, 1f);
+        public const bool StarPointerRainbow = false;
     }
 
     private static bool _showWindow = true;
 
-    private static bool _iauColorExpanded = false;
-    private static bool _asterismColorExpanded = false;
+    private static bool _skyCultureExpanded = false;
+    private static bool _asterismsExpanded = false;
+    private static bool _iauConstellationsExpanded = false;
+    private static bool _starPointerExpanded = false;
     private static bool _alignmentExpanded = false;
     private static WindowDisplay _display = WindowDisplay.Settings;
     private static string? _selectedConstellationId;
@@ -59,14 +64,21 @@ internal static class OhMyStarsWindow {
     // vehicle nor loses the state a vehicle was left in.
     private static readonly Dictionary<Vehicle, int> _orientedVehicles = new();
 
-    // The attitude mode a vehicle was in when star orientation got engaged on it. Pressing the
-    // Orient to Star button again while star orientation is still active on that vehicle restores
-    // this previous mode, making the button a toggle back out of the mod's mode.
+    // The angular-rate command the vehicle had in CustomAttitudeTarget before the mod overwrote it
+    // with star-pointing euler angles. The stock game's rate mode reads CustomAttitudeTarget as the
+    // commanded body rate and its buttons never touch the field (it is the player's persistent rate
+    // command), so the mod must restore the pre-star value on every exit or rate-hold spins wildly.
+    private static readonly Dictionary<Vehicle, double3> _savedRateCommands = new();
+
+    // The attitude mode the vehicle was in when star orientation got engaged on it. Pressing the
+    // Orient to Star button again restores this previous mode, making the button a toggle back out
+    // of the mod's mode into whatever the vehicle had before (rate-hold included).
     private static readonly Dictionary<Vehicle, PreviousAttitudeMode> _previousAttitudeModes = new();
 
-    // Vehicles whose star reapply is suppressed for one PrepareWorker pass, so a toggle-off restore
-    // gets a chance to settle before the game recomputes AttitudeTarget from the restored mode.
-    private static readonly HashSet<Vehicle> _suppressReapply = new();
+    // Vehicles pending disengage: their orientation entry stays registered so the mod's
+    // PrepareWorker reapply performs the disengage itself (restoring the previous mode) on the next
+    // tick instead of re-applying the star one final time with stale angles.
+    private static readonly HashSet<Vehicle> _pendingDisengage = new();
 
     private sealed record PreviousAttitudeMode {
         public required FlightComputerAttitudeMode AttitudeMode;
@@ -118,6 +130,13 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.alignmentRotationXDegrees = ReadFloat(values, "AlignmentRotationXDegrees", Defaults.AlignmentRotationXDegrees);
         StellariumRenderer.alignmentRotationYDegrees = ReadFloat(values, "AlignmentRotationYDegrees", Defaults.AlignmentRotationYDegrees);
         StellariumRenderer.alignmentRotationZDegrees = ReadFloat(values, "AlignmentRotationZDegrees", Defaults.AlignmentRotationZDegrees);
+
+        StellariumRenderer.starPointerDualLines = ReadBool(values, "StarPointerDualLines", Defaults.StarPointerDualLines);
+        StellariumRenderer.starPointerRainbow = ReadBool(values, "StarPointerRainbow", Defaults.StarPointerRainbow);
+        StellariumRenderer.starPointerColor = new float3(
+            ReadFloat(values, "StarPointerColorR", Defaults.StarPointerColor.X),
+            ReadFloat(values, "StarPointerColorG", Defaults.StarPointerColor.Y),
+            ReadFloat(values, "StarPointerColorB", Defaults.StarPointerColor.Z));
     }
 
     public static void SaveSettings() {
@@ -146,6 +165,11 @@ internal static class OhMyStarsWindow {
             $"AlignmentRotationXDegrees={StellariumRenderer.alignmentRotationXDegrees.ToString(CultureInfo.InvariantCulture)}",
             $"AlignmentRotationYDegrees={StellariumRenderer.alignmentRotationYDegrees.ToString(CultureInfo.InvariantCulture)}",
             $"AlignmentRotationZDegrees={StellariumRenderer.alignmentRotationZDegrees.ToString(CultureInfo.InvariantCulture)}",
+            $"StarPointerDualLines={StellariumRenderer.starPointerDualLines.ToString(CultureInfo.InvariantCulture)}",
+            $"StarPointerColorR={StellariumRenderer.starPointerColor.X.ToString(CultureInfo.InvariantCulture)}",
+            $"StarPointerColorG={StellariumRenderer.starPointerColor.Y.ToString(CultureInfo.InvariantCulture)}",
+            $"StarPointerColorB={StellariumRenderer.starPointerColor.Z.ToString(CultureInfo.InvariantCulture)}",
+            $"StarPointerRainbow={StellariumRenderer.starPointerRainbow.ToString(CultureInfo.InvariantCulture)}",
         };
 
         File.WriteAllLines(settingsPath, lines);
@@ -165,6 +189,9 @@ internal static class OhMyStarsWindow {
         StellariumRenderer.alignmentRotationXDegrees = Defaults.AlignmentRotationXDegrees;
         StellariumRenderer.alignmentRotationYDegrees = Defaults.AlignmentRotationYDegrees;
         StellariumRenderer.alignmentRotationZDegrees = Defaults.AlignmentRotationZDegrees;
+        StellariumRenderer.starPointerDualLines = Defaults.StarPointerDualLines;
+        StellariumRenderer.starPointerColor = Defaults.StarPointerColor;
+        StellariumRenderer.starPointerRainbow = Defaults.StarPointerRainbow;
 
         SaveSettings();
     }
@@ -205,26 +232,6 @@ internal static class OhMyStarsWindow {
             return;
         }
 
-        DrawSectionHeader("Sky Culture", "Selects the Stellarium sky culture that provides the asterism lines, constellation names, and star labels.");
-
-        SkyCulture? activeSkyCulture = SkyCulturesRenderer.ActiveSkyCulture;
-        string previewName = activeSkyCulture?.Name ?? "None";
-
-        if(ImGui.BeginCombo("Sky Culture", previewName)) {
-            for(int i = 0; i < SkyCulturesRenderer.SkyCultures.Count; i++) {
-                SkyCulture skyCulture = SkyCulturesRenderer.SkyCultures[i];
-                bool selected = i == SkyCulturesRenderer.ActiveSkyCultureIndex;
-
-                if(ImGui.Selectable(skyCulture.Name, selected)) {
-                    SkyCulturesRenderer.ActiveSkyCultureIndex = i;
-                }
-            }
-
-            ImGui.EndCombo();
-        }
-
-        ImGui.Separator();
-
         bool showStarNamesTop = StellariumRenderer.showStarNames;
         ConsoleWidgets.BeginRow("Show Star Names");
         if(ConsoleWidgets.Checkbox("ShowStarNames", ref showStarNamesTop, pending: false)) {
@@ -241,72 +248,120 @@ internal static class OhMyStarsWindow {
         }
         ConsoleWidgets.EndRow();
 
-        ImGui.Separator();
-        DrawSectionHeader("Asterisms", "Asterisms are culturally defined patterns that connect selected stars into familiar shapes and constellations.");
-        ImGui.Separator();
-
-        bool showAsterisms = StellariumRenderer.showAsterisms;
+        bool showAsterismsTop = StellariumRenderer.showAsterisms;
         ConsoleWidgets.BeginRow("Show Asterisms");
-        if(ConsoleWidgets.Checkbox("ShowAsterisms", ref showAsterisms, pending: false)) {
-            StellariumRenderer.showAsterisms = showAsterisms;
+        if(ConsoleWidgets.Checkbox("ShowAsterisms", ref showAsterismsTop, pending: false)) {
+            StellariumRenderer.showAsterisms = showAsterismsTop;
             SaveSettings();
         }
         ConsoleWidgets.EndRow();
 
-        float asterismLineOpacity = StellariumRenderer.asterismLineOpacity;
-        ConsoleWidgets.BeginRow("Asterism Line Brightness");
-        if(ConsoleWidgets.SliderFloat("AsterismLineOpacity", ref asterismLineOpacity, 0f, 1f, asterismLineOpacity.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
-            StellariumRenderer.asterismLineOpacity = asterismLineOpacity;
+        bool showIAUConstellationsTop = StellariumRenderer.showIAUConstellations;
+        ConsoleWidgets.BeginRow("Show Constellation Boundaries");
+        if(ConsoleWidgets.Checkbox("ShowConstellationBoundaries", ref showIAUConstellationsTop, pending: false)) {
+            StellariumRenderer.showIAUConstellations = showIAUConstellationsTop;
             SaveSettings();
         }
         ConsoleWidgets.EndRow();
 
-        DrawColorDropdown(
-            "Asterism Line Color",
-            "AsterismColor",
-            ref _asterismColorExpanded,
-            () => StellariumRenderer.asterismLineColor,
-            color => {
-                StellariumRenderer.asterismLineColor = color;
+        ImGui.Separator();
+        DrawSectionHeader("Sky Culture", "Selects the Stellarium sky culture that provides the asterism lines, constellation names, and star labels.", ref _skyCultureExpanded);
+
+        if(_skyCultureExpanded) {
+            ImGui.Separator();
+
+            SkyCulture? activeSkyCulture = SkyCulturesRenderer.ActiveSkyCulture;
+            string previewName = activeSkyCulture?.Name ?? "None";
+
+            if(ImGui.BeginCombo("Sky Culture", previewName)) {
+                // Pin a duplicate "Modern" entry at the top of the list for quick access; both this
+                // and its regular entry select the same culture, the rest of the list keeps its
+                // original order.
+                int modernIndex = FindSkyCultureIndexByName("Modern");
+                if(modernIndex >= 0) {
+                    bool modernSelected = modernIndex == SkyCulturesRenderer.ActiveSkyCultureIndex;
+                    // The ## suffix keeps the displayed text identical to the regular Modern entry
+                    // while giving this pinned duplicate its own ImGui ID.
+                    if(ImGui.Selectable(SkyCulturesRenderer.SkyCultures[modernIndex].Name + "##PinnedModern", modernSelected)) {
+                        SkyCulturesRenderer.ActiveSkyCultureIndex = modernIndex;
+                    }
+                }
+
+                for(int i = 0; i < SkyCulturesRenderer.SkyCultures.Count; i++) {
+                    SkyCulture skyCulture = SkyCulturesRenderer.SkyCultures[i];
+                    bool selected = i == SkyCulturesRenderer.ActiveSkyCultureIndex;
+
+                    if(ImGui.Selectable(skyCulture.Name, selected)) {
+                        SkyCulturesRenderer.ActiveSkyCultureIndex = i;
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+        }
+
+        ImGui.Separator();
+        DrawSectionHeader("Asterisms", "Asterisms are culturally defined patterns that connect selected stars into familiar shapes and constellations.", ref _asterismsExpanded);
+
+        if(_asterismsExpanded) {
+            ImGui.Separator();
+
+            float asterismLineOpacity = StellariumRenderer.asterismLineOpacity;
+            ConsoleWidgets.BeginRow("Asterism Line Brightness");
+            if(ConsoleWidgets.SliderFloat("AsterismLineOpacity", ref asterismLineOpacity, 0f, 1f, asterismLineOpacity.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
+                StellariumRenderer.asterismLineOpacity = asterismLineOpacity;
                 SaveSettings();
-            });
+            }
+            ConsoleWidgets.EndRow();
+
+            DrawColorEditRow(
+                "Asterism Line Color",
+                "AsterismColor",
+                () => StellariumRenderer.asterismLineColor,
+                color => {
+                    StellariumRenderer.asterismLineColor = color;
+                    SaveSettings();
+                });
+        }
 
         ImGui.Separator();
-        DrawSectionHeader("IAU Constellations", "The International Astronomical Union's modern 88-constellation scheme and its standardized constellation boundaries.");
-        ImGui.Separator();
+        DrawSectionHeader("IAU Constellations", "The International Astronomical Union's modern 88-constellation scheme and its standardized constellation boundaries.", ref _iauConstellationsExpanded);
 
-        bool showIAUConstellations = StellariumRenderer.showIAUConstellations;
-        ConsoleWidgets.BeginRow("IAU Constellations");
-        if(ConsoleWidgets.Checkbox("IAUConstellations", ref showIAUConstellations, pending: false)) {
-            StellariumRenderer.showIAUConstellations = showIAUConstellations;
-            SaveSettings();
-        }
-        ConsoleWidgets.EndRow();
+        if(_iauConstellationsExpanded) {
+            ImGui.Separator();
 
-        float iauLineOpacity = StellariumRenderer.iauLineOpacity;
-        ConsoleWidgets.BeginRow("IAU Line Brightness");
-        if(ConsoleWidgets.SliderFloat("IAULineOpacity", ref iauLineOpacity, 0f, 1f, iauLineOpacity.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
-            StellariumRenderer.iauLineOpacity = iauLineOpacity;
-            SaveSettings();
-        }
-        ConsoleWidgets.EndRow();
-
-        DrawColorDropdown(
-            "IAU Line Color",
-            "IAUColor",
-            ref _iauColorExpanded,
-            () => StellariumRenderer.iauLineColor,
-            color => {
-                StellariumRenderer.iauLineColor = color;
+            float iauLineOpacity = StellariumRenderer.iauLineOpacity;
+            ConsoleWidgets.BeginRow("IAU Line Brightness");
+            if(ConsoleWidgets.SliderFloat("IAULineOpacity", ref iauLineOpacity, 0f, 1f, iauLineOpacity.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
+                StellariumRenderer.iauLineOpacity = iauLineOpacity;
                 SaveSettings();
-            });
+            }
+            ConsoleWidgets.EndRow();
+
+            DrawColorEditRow(
+                "IAU Line Color",
+                "IAUColor",
+                () => StellariumRenderer.iauLineColor,
+                color => {
+                    StellariumRenderer.iauLineColor = color;
+                    SaveSettings();
+                });
+        }
 
         ImGui.Separator();
-        if(ImGui.Button(_alignmentExpanded ? "Alignment v" : "Alignment >")) {
-            _alignmentExpanded = !_alignmentExpanded;
+        DrawSectionHeader("Star Pointer", "Appearance of the line drawn from this window to the star selected on the Information tab while its Star Pointer is enabled. The pointer stays visible on every tab.", ref _starPointerExpanded);
+
+        if(_starPointerExpanded) {
+            ImGui.Separator();
+            DrawStarPointerSection();
         }
+
+        ImGui.Separator();
+        DrawSectionHeader("Alignment", "Fine-tunes the rotation of the asterism and IAU constellation lines so they match the game's star field.", ref _alignmentExpanded);
 
         if(_alignmentExpanded) {
+            ImGui.Separator();
+
             DrawAlignmentAxisRow(
                 "Rotation X",
                 "AlignmentRotationX",
@@ -340,12 +395,57 @@ internal static class OhMyStarsWindow {
         ImGui.End();
     }
 
-    private static void DrawSectionHeader(string title, string helpText) {
-        ConsoleWidgets.RegionHeader(title);
+    // Collapsible section header: a button that toggles the items below it on and off, in the same
+    // style the Alignment section uses ("v" expanded, ">" collapsed), plus the "(?)" help tooltip.
+    private static void DrawSectionHeader(string title, string helpText, ref bool expanded) {
+        if(ImGui.Button(expanded ? title + " v" : title + " >")) {
+            expanded = !expanded;
+        }
+
         ImGui.SameLine();
         ImGui.Text("(?)");
         if(ImGui.IsItemHovered(ImGuiHoveredFlags.None)) {
             ConsoleWidgets.Tooltip(helpText);
+        }
+    }
+
+    // Star Pointer settings: one line from the nearest window corner or one from each of the two
+    // nearest corners, the line color, and a rainbow override that cycles the line color through
+    // the spectrum while the pointer is drawn.
+    private static void DrawStarPointerSection() {
+        bool dualLines = StellariumRenderer.starPointerDualLines;
+        ConsoleWidgets.BeginRow("Pointer Lines");
+        if(ConsoleWidgets.Button(dualLines ? "Two Lines" : "One Line", "StarPointerLineMode", default)) {
+            StellariumRenderer.starPointerDualLines = !dualLines;
+            SaveSettings();
+        }
+        ConsoleWidgets.EndRow();
+
+        bool rainbow = StellariumRenderer.starPointerRainbow;
+        float3 pointerColor = StellariumRenderer.starPointerColor;
+        ConsoleWidgets.BeginRow("Pointer Color");
+        using(new ImGuiDisabledScope(rainbow)) {
+            if(ImGui.ColorEdit3(new ImString("##StarPointerColor"), ref pointerColor, ImGuiColorEditFlags.NoInputs)) {
+                StellariumRenderer.starPointerColor = pointerColor;
+                SaveSettings();
+            }
+        }
+        ConsoleWidgets.EndRow();
+
+        if(rainbow) {
+            if(ConsoleWidgets.PositiveButton("Rainbow Spectrum", "StarPointerRainbow", default)) {
+                StellariumRenderer.starPointerRainbow = false;
+                SaveSettings();
+            }
+        } else {
+            if(ConsoleWidgets.Button("Rainbow Spectrum", "StarPointerRainbow", default)) {
+                StellariumRenderer.starPointerRainbow = true;
+                SaveSettings();
+            }
+        }
+        if(rainbow) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "Rainbow On");
         }
     }
 
@@ -614,23 +714,48 @@ internal static class OhMyStarsWindow {
     public static void ClearOrientedStar() {
         _orientedVehicles.Clear();
         _previousAttitudeModes.Clear();
-        _suppressReapply.Clear();
+        _pendingDisengage.Clear();
+        _savedRateCommands.Clear();
     }
 
-    // One-shot check used by the PrepareWorker patch: true once per suppressed vehicle, then rearmed.
-    public static bool ConsumeReapplySuppression(Vehicle vehicle) {
-        return vehicle != null && _suppressReapply.Remove(vehicle);
+    // Skip the normal PrepareWorker reapply for a vehicle whose disengage is handled this tick.
+    public static bool IsDisengagePending(Vehicle vehicle) {
+        return vehicle != null && _pendingDisengage.Contains(vehicle);
+    }
+
+    // Performs the disengage for a pending vehicle from inside the PrepareWorker reapply: restores
+    // the attitude mode the vehicle had before the mod took over (via the same TrackTarget/RateHold
+    // the game buttons call), with CustomAttitudeTarget cleaned first, then drops the orientation
+    // entry so the mod stops reapplying. Falls back to a rate-hold when no previous mode survived.
+    public static void DisengagePending(Vehicle vehicle) {
+        if(vehicle == null || !_pendingDisengage.Remove(vehicle))
+            return;
+
+        FlightComputer flightComputer = vehicle.FlightComputer;
+        if(_previousAttitudeModes.TryGetValue(vehicle, out PreviousAttitudeMode? previous)) {
+            _previousAttitudeModes.Remove(vehicle);
+            ApplyPreviousAttitudeMode(flightComputer, previous);
+        } else {
+            flightComputer.CustomAttitudeTarget = _savedRateCommands.TryGetValue(vehicle, out double3 saved)
+                ? saved
+                : double3.Zero;
+            flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+            flightComputer.RateHold(vehicle.NavBallData.Frame);
+        }
+
+        _savedRateCommands.Remove(vehicle);
+        _orientedVehicles.Remove(vehicle);
     }
 
     // Called from the flight computer patches whenever the game itself changes attitude mode on a
-    // vehicle, so that vehicle leaves the mod's star orientation mode. CustomAttitudeTarget holds
-    // our star-pointing angles while AttitudeTrackTarget is Custom, but the engine reinterprets that
-    // same field as an angular rate once the mode becomes None (rate-hold), so it must be zeroed out
-    // whenever we stop being the ones driving attitude. AttitudeTarget (the resolved quaternion) also
-    // needs zeroing: for named track targets the engine only overwrites it when it can resolve a
-    // direction (e.g. Prograde with zero velocity resolves to nothing), otherwise it silently keeps
-    // whatever quaternion was last there - our star-pointing one - and the vehicle keeps pointing at
-    // the star even though the selected mode says otherwise.
+    // vehicle, so that vehicle leaves the mod's star orientation mode. Also called from
+    // DetachOrientedStar, which supplies the vehicle directly. CustomAttitudeTarget holds our
+    // star-pointing euler angles while AttitudeTrackTarget is Custom, but the engine reinterprets
+    // that same field as a body angular rate command once the mode becomes rate-hold (see
+    // UpdateAttitudeTarget: TrackTarget.None routes CustomAttitudeTarget into AttitudeTarget.RatesCci).
+    // SetNullRot does not clear the field - in stock play it only ever holds a zero or player-set
+    // rate - so without this cleanup the leftover star angles would drive a ~1 rad/s spin the
+    // moment the vehicle drops into rate-hold.
     public static void ClearOrientedStar(FlightComputer? flightComputer) {
         if(flightComputer == null)
             return;
@@ -643,37 +768,46 @@ internal static class OhMyStarsWindow {
             }
         }
 
-        if(owner == null)
-            return;
+        // The orientation entry is usually already gone on a disengage (removed in ToggleOrientToStar),
+        // so also release the pending-disengage flag for whichever vehicle owns this flight computer,
+        // otherwise the reapply would stay suppressed after the queued button press has run.
+        if(owner == null) {
+            foreach(Vehicle candidate in _pendingDisengage) {
+                if(ReferenceEquals(candidate.FlightComputer, flightComputer)) {
+                    owner = candidate;
+                    break;
+                }
+            }
+        }
 
-        // Only treat this as "leaving star orientation" when the flight computer is actually still
-        // in the mod's mode. If it is not (e.g. a queued input from a restore, or an unrelated mode
-        // change), the dict entry may legitimately belong to a star the vehicle is still tracking and
-        // must not be wiped.
-        bool inModMode = flightComputer.AttitudeTrackTarget == FlightComputerAttitudeTrackTarget.Custom &&
-                         flightComputer.AttitudeFrame == VehicleReferenceFrame.EclBody;
-        DefaultCategory.Log.Info(
-            $"[OhMyStars] ClearOrientedStar fc owner={owner.Id} inModMode={inModMode} track={flightComputer.AttitudeTrackTarget} frame={flightComputer.AttitudeFrame} mode={flightComputer.AttitudeMode}");
-        if(!inModMode)
-            return;
-
-        _orientedVehicles.Remove(owner);
-        _previousAttitudeModes.Remove(owner);
-        flightComputer.CustomAttitudeTarget = double3.Zero;
-        flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+        if(owner != null) {
+            ClearOrientedStar(owner);
+        }
     }
 
-    // Removes the vehicle from the mod's star orientation mode without touching its flight computer,
-    // remembering the attitude mode it was in when star orientation got engaged so a later re-entry
-    // can restore the mode in effect at that time (not the one being left behind now).
-    public static void DetachOrientedStar(Vehicle vehicle) {
+    // Removes the vehicle from the mod's star orientation mode. These patches (SetNullRot, RateHold,
+    // TrackTarget, etc.) run when the game is leaving the mod's mode, but their Prefix fires BEFORE
+    // the mode actually flips - the computer still reads Custom/EclBody at that point, so an
+    // "already left the mod's mode" check would skip the cleanup entirely. The star euler angles the
+    // mod wrote into CustomAttitudeTarget are about to be read by rate-hold as an angular-rate
+    // command, so hand back the player's pre-star rate command unconditionally.
+    private static void ClearOrientedStar(Vehicle vehicle) {
         _orientedVehicles.Remove(vehicle);
-        if(_previousAttitudeModes.TryGetValue(vehicle, out PreviousAttitudeMode? previous)) {
-            _previousAttitudeModes[vehicle] = SnapshotAttitudeMode(vehicle.FlightComputer) with {
-                AttitudeTrackTarget = previous.AttitudeTrackTarget,
-                CustomAttitudeTarget = previous.CustomAttitudeTarget
-            };
-        }
+        _pendingDisengage.Remove(vehicle);
+        _previousAttitudeModes.Remove(vehicle);
+
+        FlightComputer flightComputer = vehicle.FlightComputer;
+        flightComputer.CustomAttitudeTarget = _savedRateCommands.TryGetValue(vehicle, out double3 saved)
+            ? saved
+            : double3.Zero;
+        flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+        _savedRateCommands.Remove(vehicle);
+    }
+
+    // Removes the vehicle from the mod's star orientation mode, sanitizing the flight computer
+    // fields via ClearOrientedStar (which hands back the player's pre-star rate command).
+    public static void DetachOrientedStar(Vehicle vehicle) {
+        ClearOrientedStar(vehicle);
     }
 
     // Whether the mod's star orientation is currently assigned to the controlled vehicle for the
@@ -699,82 +833,65 @@ internal static class OhMyStarsWindow {
         };
     }
 
-    // Restores the previous attitude mode by enqueuing the exact same input the game enqueues when
-    // the player presses a mode button: a FlightComputerInputData on FlightComputerInputBuffer. The
-    // game's own Apply path then runs SetEnum, plays the sound, and queues the flight-computer
-    // config reset - identical to a real button press.
-    private static void RestorePreviousAttitudeMode(Vehicle vehicle, PreviousAttitudeMode previous) {
-        // A named track target maps 1:1 to the mode button's enum value; rate-hold is the frame
-        // button for the frame the vehicle was holding in.
-        Enum enumValue = previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.None &&
-                         previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.Custom
-            ? (Enum)previous.AttitudeTrackTarget
-            : previous.AttitudeFrame;
-
-        InputEvents.FlightComputerInputBuffer.Add(new InputEvents.FlightComputerInputData {
-            Vehicle = vehicle,
-            Toggle = false,
-            EnumValue = enumValue,
-            Sound = null
-        });
-
-        // In rate-hold and custom modes CustomAttitudeTarget carries the stored angular rate or the
-        // euler angles respectively; SetEnum leaves the field alone, so restore it on top.
+    // Applies a remembered attitude mode using the same calls the game's own mode buttons run: a
+    // named track target goes through TrackTarget, rate-hold through RateHold on the remembered
+    // frame. CustomAttitudeTarget is restored/zeroed FIRST because the patches fire before the mode
+    // flips (still Custom) and rate-hold reads that field as the body rate command - leaving the
+    // mod's star angles there is what caused the wild spin.
+    private static void ApplyPreviousAttitudeMode(FlightComputer flightComputer, PreviousAttitudeMode previous) {
         if(previous.AttitudeTrackTarget is FlightComputerAttitudeTrackTarget.None or FlightComputerAttitudeTrackTarget.Custom) {
-            vehicle.FlightComputer.CustomAttitudeTarget = previous.CustomAttitudeTarget;
+            flightComputer.CustomAttitudeTarget = previous.CustomAttitudeTarget;
+        } else {
+            flightComputer.CustomAttitudeTarget = double3.Zero;
+        }
+        flightComputer.AttitudeTarget = AttitudeTarget.Zero;
+
+        if(previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.None &&
+           previous.AttitudeTrackTarget != FlightComputerAttitudeTrackTarget.Custom) {
+            flightComputer.TrackTarget(previous.AttitudeTrackTarget);
+        } else {
+            flightComputer.RateHold(previous.AttitudeFrame);
         }
 
         // The buttons always leave Auto engaged for these paths; restore Manual if that is what the
         // vehicle was in before the mod took over.
-        if(previous.AttitudeMode == FlightComputerAttitudeMode.Manual) {
-            InputEvents.FlightComputerInputBuffer.Add(new InputEvents.FlightComputerInputData {
-                Vehicle = vehicle,
-                Toggle = false,
-                EnumValue = FlightComputerAttitudeMode.Manual,
-                Sound = null
-            });
-        }
+        flightComputer.AttitudeMode = previous.AttitudeMode;
+    }
+
+    // Marks the vehicle for disengage; the mod's PrepareWorker reapply performs the previous-mode
+    // restore on the next tick, atomically with no stale star-angle write interleaving.
+    private static void PressGameRateButton(Vehicle vehicle) {
+        _pendingDisengage.Add(vehicle);
     }
 
     // Toggles star orientation for the given star on the currently controlled vehicle. Pressing the
-    // button while the vehicle is still in the mod's orientation mode restores the attitude mode the
-    // vehicle had when star orientation was engaged. Leaving star orientation any other way is done
-    // via the game's own standard mode buttons/keybinds, which the flight computer patches detect
-    // and react to per vehicle.
+    // button while the vehicle is still in the mod's orientation mode disengages it into the game's
+    // own Rate mode. Leaving star orientation any other way is done via the game's own standard
+    // mode buttons/keybinds, which the flight computer patches detect and react to per vehicle.
     public static void ToggleOrientToStar(int hip) {
         Vehicle? vehicle = Program.ControlledVehicle;
         if(vehicle == null || hip <= 0)
             return;
 
         // Pressing the button on the star the vehicle is already oriented to toggles the mod's mode
-        // off, restoring whatever attitude mode the vehicle had when star orientation was engaged.
+        // off into the game's own Rate mode. The entry stays registered so the mod's PrepareWorker
+        // reapply performs the rate-hold cleanly on the next tick.
         if(IsOrientedToStar(hip)) {
             DefaultCategory.Log.Info($"[OhMyStars] ToggleOrientToStar disengage vehicle={vehicle.Id} hip={hip}");
-            _orientedVehicles.Remove(vehicle);
-            _suppressReapply.Add(vehicle);
-            if(_previousAttitudeModes.TryGetValue(vehicle, out PreviousAttitudeMode? previous)) {
-                _previousAttitudeModes.Remove(vehicle);
-                RestorePreviousAttitudeMode(vehicle, previous);
-            }
+            PressGameRateButton(vehicle);
             return;
         }
 
         // Engaging (or retargeting to a different star). Snapshot the attitude mode in effect right
         // now, before the mod takes over - but if the vehicle is already star-oriented, its current
         // mode is the mod's own Custom/EclBody mode, which is meaningless as a "previous mode", so
-        // keep the snapshot taken when the mod first engaged instead.
+        // keep the snapshot taken when the mod first engaged instead. Also capture the player's rate
+        // command the first time the mod takes over so it can be handed back when the mod leaves.
         bool alreadyOriented = _orientedVehicles.ContainsKey(vehicle);
         if(!alreadyOriented) {
-            _previousAttitudeModes[vehicle] = SnapshotAttitudeMode(vehicle.FlightComputer);
-        } else if(!_previousAttitudeModes.ContainsKey(vehicle)) {
-            // Already oriented but no snapshot survived (e.g. after a save load): fall back to a
-            // plain EclBody rate-hold so toggling off always has somewhere sane to land.
-            _previousAttitudeModes[vehicle] = new PreviousAttitudeMode {
-                AttitudeMode = FlightComputerAttitudeMode.Auto,
-                AttitudeFrame = VehicleReferenceFrame.EclBody,
-                AttitudeTrackTarget = FlightComputerAttitudeTrackTarget.None,
-                CustomAttitudeTarget = double3.Zero
-            };
+            FlightComputer flightComputer = vehicle.FlightComputer;
+            _previousAttitudeModes[vehicle] = SnapshotAttitudeMode(flightComputer);
+            _savedRateCommands[vehicle] = flightComputer.CustomAttitudeTarget;
         }
 
         _orientedVehicles[vehicle] = hip;
@@ -847,7 +964,7 @@ internal static class OhMyStarsWindow {
         hip = _selectedStarHip;
         windowPosition = _windowPosition;
         windowSize = _windowSize;
-        return _showWindow && _display == WindowDisplay.Information && _showStarPointer && hip > 0;
+        return _showWindow && _showStarPointer && hip > 0;
     }
 
     // Screen rect currently occupied by the mod's own window, so the navball marker can hide
@@ -948,6 +1065,16 @@ internal static class OhMyStarsWindow {
         return -1;
     }
 
+    private static int FindSkyCultureIndexByName(string name) {
+        IReadOnlyList<SkyCulture> skyCultures = SkyCulturesRenderer.SkyCultures;
+        for(int index = 0; index < skyCultures.Count; index++) {
+            if(string.Equals(skyCultures[index].Name, name, StringComparison.OrdinalIgnoreCase))
+                return index;
+        }
+
+        return -1;
+    }
+
     private static int FindStarIndex(IReadOnlyList<StarInformation> stars, int hip) {
         for(int index = 0; index < stars.Count; index++) {
             if(stars[index].Hip == hip)
@@ -1035,50 +1162,21 @@ internal static class OhMyStarsWindow {
         }
     }
 
-    private static void DrawColorDropdown(
+    // Color picker row: a ColorEdit3 swatch that opens ImGui's full color picker popup (hue
+    // bar/wheel plus RGB/HSV/hex inputs). NoInputs hides the inline per-channel float boxes so
+    // only the swatch shows; the picker popup still provides them.
+    private static void DrawColorEditRow(
         string rowLabel,
         string idPrefix,
-        ref bool expanded,
         Func<float3> getColor,
         Action<float3> setColor) {
 
-        ConsoleWidgets.BeginRow(rowLabel);
-        string toggleLabel = expanded ? "Hide RGB \u25b2" : "Edit RGB \u25bc";
-        if(ConsoleWidgets.Button(toggleLabel, idPrefix + "Toggle", default)) {
-            expanded = !expanded;
-        }
-        ConsoleWidgets.EndRow();
-
-        if(!expanded)
-            return;
-
         float3 color = getColor();
-        bool changed = false;
-
-        float r = color.X;
-        ConsoleWidgets.BeginRow("R");
-        if(ConsoleWidgets.SliderFloat(idPrefix + "R", ref r, 0f, 1f, r.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
-            changed = true;
+        ConsoleWidgets.BeginRow(rowLabel);
+        if(ImGui.ColorEdit3(new ImString("##" + idPrefix), ref color, ImGuiColorEditFlags.NoInputs)) {
+            setColor(color);
         }
         ConsoleWidgets.EndRow();
-
-        float g = color.Y;
-        ConsoleWidgets.BeginRow("G");
-        if(ConsoleWidgets.SliderFloat(idPrefix + "G", ref g, 0f, 1f, g.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
-            changed = true;
-        }
-        ConsoleWidgets.EndRow();
-
-        float b = color.Z;
-        ConsoleWidgets.BeginRow("B");
-        if(ConsoleWidgets.SliderFloat(idPrefix + "B", ref b, 0f, 1f, b.ToString("F2", CultureInfo.InvariantCulture), pending: false)) {
-            changed = true;
-        }
-        ConsoleWidgets.EndRow();
-
-        if(changed) {
-            setColor(new float3(r, g, b));
-        }
     }
 
     private static string? GetSettingsFilePath() {
