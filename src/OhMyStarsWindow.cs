@@ -1,4 +1,5 @@
 using Brutal.ImGuiApi;
+using Brutal.ImGuiApi.Extensions;
 using Brutal.Logging;
 using Brutal.Numerics;
 using KSA;
@@ -14,6 +15,14 @@ internal static class OhMyStarsWindow {
         Settings,
         Information,
         SpectrumLegend
+    }
+
+    // The Information tab's three star-browsing modes: pick a constellation then one of its stars,
+    // browse every catalog star with a proper name, or browse every catalog star with a Bayer designation.
+    private enum StarSelectionMode {
+        Constellation,
+        Proper,
+        Bayer
     }
 
     private static class Defaults {
@@ -49,7 +58,17 @@ internal static class OhMyStarsWindow {
     private static bool _starPointerExpanded = false;
     private static bool _alignmentExpanded = false;
     private static WindowDisplay _display = WindowDisplay.Settings;
+    private static StarSelectionMode _starSelectionMode = StarSelectionMode.Constellation;
     private static string? _selectedConstellationId;
+
+    // The star currently picked from the Proper/Bayer dropdowns, so its name can be drawn on the
+    // star itself in the 3D view - only set while one of those modes has a live selection.
+    private static int _dropdownLabelHip;
+    private static string _dropdownLabelName = string.Empty;
+
+    // Text filters for the Proper/Bayer "Star" combo boxes - an empty filter shows every result.
+    private static readonly ImInputString _properSearchBuffer = new ImInputString(256);
+    private static readonly ImInputString _bayerSearchBuffer = new ImInputString(256);
     private static int _selectedStarHip;
     private static bool _showStarPointer;
     private static float2 _windowPosition;
@@ -519,6 +538,16 @@ internal static class OhMyStarsWindow {
         }
     }
 
+    // A standalone "(?)" hover tooltip placed after a preceding widget via SameLine, for widgets
+    // (like combo boxes) that don't have their own label+help row helper.
+    private static void DrawHelpMarker(string helpText) {
+        ImGui.SameLine();
+        ImGui.Text("(?)");
+        if(ImGui.IsItemHovered(ImGuiHoveredFlags.None)) {
+            ConsoleWidgets.Tooltip(helpText);
+        }
+    }
+
     // Indents every widget row inside an expanded category four text spaces from the left edge.
     // ImGui.Indent shifts the cursor origin persistently (unlike a one-off SetCursorPosX), which is
     // what makes it stick for ConsoleWidgets.BeginRow rows: BeginRowCore captures the cursor as the
@@ -609,6 +638,19 @@ internal static class OhMyStarsWindow {
         }
     }
 
+    // Same layout as DrawTabButton but toggles the Information tab's star selection mode instead
+    // of the top-level window tab, and isn't persisted to settings.
+    private static void DrawSelectionModeButton(string label, StarSelectionMode mode) {
+        bool selected = _starSelectionMode == mode;
+        bool clicked = selected
+            ? DrawColoredTabButton(label)
+            : ConsoleWidgets.Button(label, label, default);
+
+        if(clicked && !selected) {
+            _starSelectionMode = mode;
+        }
+    }
+
     // Same layout/rounding/padding as ConsoleWidgets' filled buttons (see PrimaryButton in
     // ConsoleWidgets.DrawButtonCore), but filled with the window title bar color and white text.
     private static bool DrawColoredTabButton(string label) {
@@ -645,11 +687,14 @@ internal static class OhMyStarsWindow {
     }
 
     private static void DrawInformation() {
+        DrawSelectionModeButton("Constellations", StarSelectionMode.Constellation);
+        ImGui.SameLine();
+        DrawSelectionModeButton("Proper", StarSelectionMode.Proper);
+        ImGui.SameLine();
+        DrawSelectionModeButton("Bayer", StarSelectionMode.Bayer);
+        ImGui.Separator();
+
         IReadOnlyList<ConstellationInformation> constellations = SkyCulturesRenderer.GetActiveConstellationInformation();
-        if(constellations.Count == 0) {
-            ImGui.Text("No constellation information is available for the active sky culture.");
-            return;
-        }
 
         // On a control switch, stash the outgoing vehicle's selection and load the incoming
         // vehicle's remembered selection (or fall back to its oriented star if it has one).
@@ -660,8 +705,7 @@ internal static class OhMyStarsWindow {
             }
 
             if(controlledVehicle != null) {
-                if(_vehicleSelections.TryGetValue(controlledVehicle, out var saved) &&
-                   FindConstellationIndex(constellations, saved.ConstellationId) >= 0) {
+                if(_vehicleSelections.TryGetValue(controlledVehicle, out var saved)) {
                     _selectedConstellationId = saved.ConstellationId;
                     _selectedStarHip = saved.StarHip;
                 } else if(_orientedVehicles.TryGetValue(controlledVehicle, out int orientedHip) && orientedHip > 0) {
@@ -672,53 +716,28 @@ internal static class OhMyStarsWindow {
             _lastSelectionVehicle = controlledVehicle;
         }
 
-        int selectedConstellationIndex = FindConstellationIndex(constellations, _selectedConstellationId);
-        if(selectedConstellationIndex < 0) {
-            selectedConstellationIndex = 0;
-            _selectedConstellationId = constellations[0].Id;
-            _selectedStarHip = 0;
-        }
+        (StarInformation Star, string DisplayName)? selection = _starSelectionMode switch {
+            StarSelectionMode.Proper => DrawProperSelector(),
+            StarSelectionMode.Bayer => DrawBayerSelector(),
+            _ => DrawConstellationSelector(constellations),
+        };
 
-        ConstellationInformation constellation = constellations[selectedConstellationIndex];
-        if(ImGui.BeginCombo("Constellation", constellation.Name)) {
-            for(int index = 0; index < constellations.Count; index++) {
-                ConstellationInformation candidate = constellations[index];
-                bool selected = candidate.Id == _selectedConstellationId;
-
-                if(ImGui.Selectable(candidate.Name, selected)) {
-                    _selectedConstellationId = candidate.Id;
-                    _selectedStarHip = 0;
-                }
-            }
-
-            ImGui.EndCombo();
-        }
-
-        selectedConstellationIndex = FindConstellationIndex(constellations, _selectedConstellationId);
-        constellation = constellations[selectedConstellationIndex];
-        if(constellation.Stars.Count == 0) {
-            ImGui.Text("No catalog stars are available for this constellation.");
+        if(selection == null) {
+            _dropdownLabelHip = 0;
+            _dropdownLabelName = string.Empty;
             return;
         }
 
-        int selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
-        if(selectedStarIndex < 0) {
-            selectedStarIndex = 0;
-            _selectedStarHip = constellation.Stars[0].Hip;
-        }
+        StarInformation star = selection.Value.Star;
+        string starDisplayName = selection.Value.DisplayName;
+        _selectedStarHip = star.Hip;
 
-        StarInformation star = constellation.Stars[selectedStarIndex];
-        if(ImGui.BeginCombo("Star", star.DisplayName)) {
-            for(int index = 0; index < constellation.Stars.Count; index++) {
-                StarInformation candidate = constellation.Stars[index];
-                bool selected = candidate.Hip == _selectedStarHip;
-
-                if(ImGui.Selectable(candidate.DisplayName, selected)) {
-                    _selectedStarHip = candidate.Hip;
-                }
-            }
-
-            ImGui.EndCombo();
+        if(_starSelectionMode == StarSelectionMode.Constellation) {
+            _dropdownLabelHip = 0;
+            _dropdownLabelName = string.Empty;
+        } else {
+            _dropdownLabelHip = star.Hip;
+            _dropdownLabelName = starDisplayName;
         }
 
         if(_showStarPointer) {
@@ -735,13 +754,13 @@ internal static class OhMyStarsWindow {
             ImGui.TextColored(in ConsoleStyle.Positive, "Pointer On");
         }
 
-        selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
-        star = constellation.Stars[selectedStarIndex];
         ImGui.NewLine();
         ImGui.Separator();
-        DrawRegionHeaderLarge(star.DisplayName, 1.5f);
+        DrawRegionHeaderLarge(starDisplayName, 1.5f);
         ImGui.Separator();
-        DrawInformationValue("Hipparcos #", star.Hip.ToString(CultureInfo.InvariantCulture));
+        if(!string.IsNullOrWhiteSpace(star.HipparcosNumber)) {
+            DrawInformationValue("Hipparcos #", star.HipparcosNumber);
+        }
         DrawInformationValue("RA (hrs:min:sec)", star.RightAscension);
         DrawInformationValue("Dec (deg)", star.Declination);
         if(!string.IsNullOrWhiteSpace(star.Bayer)) {
@@ -780,7 +799,7 @@ internal static class OhMyStarsWindow {
 
         if(isOriented) {
             ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Active Orientation " + star.DisplayName);
+            ImGui.TextColored(in ConsoleStyle.Positive, "Active Orientation " + starDisplayName);
         } else if(!hasVehicle) {
             ImGui.SameLine();
             ImGui.TextColored(in ConsoleStyle.TextMuted, "(No active vehicle)");
@@ -803,7 +822,7 @@ internal static class OhMyStarsWindow {
         }
         if(showNavballMarker) {
             ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Marker On " + star.DisplayName);
+            ImGui.TextColored(in ConsoleStyle.Positive, "Marker On " + starDisplayName);
         }
 
         ImGui.Dummy(new float2(0f, 4f));
@@ -824,7 +843,168 @@ internal static class OhMyStarsWindow {
         }
     }
 
+    // Constellation selection mode: pick a constellation, then one of its stars.
+    private static (StarInformation Star, string DisplayName)? DrawConstellationSelector(
+        IReadOnlyList<ConstellationInformation> constellations) {
+        if(constellations.Count == 0) {
+            ImGui.Text("No constellation information is available for the active sky culture.");
+            return null;
+        }
+
+        int selectedConstellationIndex = FindConstellationIndex(constellations, _selectedConstellationId);
+        if(selectedConstellationIndex < 0) {
+            selectedConstellationIndex = 0;
+            _selectedConstellationId = constellations[0].Id;
+            _selectedStarHip = 0;
+        }
+
+        ConstellationInformation constellation = constellations[selectedConstellationIndex];
+        if(ImGui.BeginCombo("Constellation", constellation.Name)) {
+            for(int index = 0; index < constellations.Count; index++) {
+                ConstellationInformation candidate = constellations[index];
+                bool selected = candidate.Id == _selectedConstellationId;
+
+                if(ImGui.Selectable(candidate.Name, selected)) {
+                    _selectedConstellationId = candidate.Id;
+                    _selectedStarHip = 0;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        selectedConstellationIndex = FindConstellationIndex(constellations, _selectedConstellationId);
+        constellation = constellations[selectedConstellationIndex];
+        if(constellation.Stars.Count == 0) {
+            ImGui.Text("No catalog stars are available for this constellation.");
+            return null;
+        }
+
+        int selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
+        if(selectedStarIndex < 0) {
+            selectedStarIndex = 0;
+            _selectedStarHip = constellation.Stars[0].Hip;
+        }
+
+        StarInformation star = constellation.Stars[selectedStarIndex];
+        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+            for(int index = 0; index < constellation.Stars.Count; index++) {
+                StarInformation candidate = constellation.Stars[index];
+                bool selected = candidate.Hip == _selectedStarHip;
+
+                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                    _selectedStarHip = candidate.Hip;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
+        star = constellation.Stars[selectedStarIndex];
+        return (star, star.DisplayName);
+    }
+
+    // Proper selection mode: browse every catalog star that has a proper name.
+    private static (StarInformation Star, string DisplayName)? DrawProperSelector() {
+        IReadOnlyList<StarInformation> stars = SkyCulturesRenderer.GetAllNamedStars();
+        if(stars.Count == 0) {
+            ImGui.Text("No named stars are available in the catalog.");
+            return null;
+        }
+
+        int selectedIndex = FindStarIndex(stars, _selectedStarHip);
+        if(selectedIndex < 0) {
+            selectedIndex = 0;
+            _selectedStarHip = stars[0].Hip;
+        }
+
+        StarInformation star = stars[selectedIndex];
+        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+            ImGui.InputText(new ImString("Search"), _properSearchBuffer);
+
+            // An empty search shows every star; otherwise only names containing the search text.
+            string properSearch = _properSearchBuffer.Value;
+            IEnumerable<StarInformation> filteredStars = properSearch.Length == 0
+                ? stars
+                : stars.Where(s => s.DisplayName.Contains(properSearch, StringComparison.OrdinalIgnoreCase));
+
+            foreach(StarInformation candidate in filteredStars) {
+                bool selected = candidate.Hip == _selectedStarHip;
+
+                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                    _selectedStarHip = candidate.Hip;
+                }
+            }
+            ImGui.EndCombo();
+        }
+        DrawHelpMarker("A proper name is an individually assigned traditional or official name for a star, such as \"Sirius\" or \"Betelgeuse\", rather than a catalog designation.");
+
+        selectedIndex = FindStarIndex(stars, _selectedStarHip);
+        star = stars[selectedIndex];
+        return (star, star.DisplayName);
+    }
+
+    // Bayer selection mode: browse every catalog star with a Bayer designation, listed by its full
+    // constellation name plus expanded Bayer letter (e.g. "Cassiopeia Iota").
+    private static (StarInformation Star, string DisplayName)? DrawBayerSelector() {
+        IReadOnlyList<BayerStarInformation> stars = SkyCulturesRenderer.GetAllBayerStars();
+        if(stars.Count == 0) {
+            ImGui.Text("No stars with Bayer designations are available in the catalog.");
+            return null;
+        }
+
+        int selectedIndex = FindBayerStarIndex(stars, _selectedStarHip);
+        if(selectedIndex < 0) {
+            selectedIndex = 0;
+            _selectedStarHip = stars[0].Star.Hip;
+        }
+
+        BayerStarInformation star = stars[selectedIndex];
+        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+            ImGui.InputText(new ImString("Search"), _bayerSearchBuffer);
+
+            // An empty search shows every star; otherwise only names containing the search text.
+            string bayerSearch = _bayerSearchBuffer.Value;
+            IEnumerable<BayerStarInformation> filteredStars = bayerSearch.Length == 0
+                ? stars
+                : stars.Where(s => s.DisplayName.Contains(bayerSearch, StringComparison.OrdinalIgnoreCase));
+
+            foreach(BayerStarInformation candidate in filteredStars) {
+                bool selected = candidate.Star.Hip == _selectedStarHip;
+
+                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                    _selectedStarHip = candidate.Star.Hip;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+        DrawHelpMarker("A Bayer designation identifies a star within its constellation by a Greek letter (or, once those run out, a Roman letter) usually assigned in rough order of brightness, such as \"Alpha\" for the brightest star in a constellation.");
+
+        selectedIndex = FindBayerStarIndex(stars, _selectedStarHip);
+        star = stars[selectedIndex];
+        return (star.Star, star.DisplayName);
+    }
+
+    private static int FindBayerStarIndex(IReadOnlyList<BayerStarInformation> stars, int hip) {
+        for(int index = 0; index < stars.Count; index++) {
+            if(stars[index].Star.Hip == hip)
+                return index;
+        }
+
+        return -1;
+    }
+
+
     public static int SelectedStarHip => _selectedStarHip;
+
+    // The star to label in the 3D view because it's the live Proper/Bayer dropdown selection.
+    public static bool TryGetDropdownSelectedStarLabel(out int hip, out string name) {
+        hip = _dropdownLabelHip;
+        name = _dropdownLabelName;
+        return hip > 0 && !string.IsNullOrEmpty(name);
+    }
 
     public static bool TryGetOrientedStar(Vehicle vehicle, out int hip) {
         hip = 0;
@@ -1025,14 +1205,26 @@ internal static class OhMyStarsWindow {
         if(hip <= 0 || vehicle == null)
             return;
 
-        if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 rawDir))
-            return;
+        double3 starDirEcl;
+        if(SkyCulturesRenderer.IsCentralStar(hip)) {
+            // The central star sits at the ecliptic origin, so the direction to it from the vehicle is
+            // just the negative of the vehicle's own (exact) position - no fixed-star alignment applies.
+            double3 vehiclePositionEcl = vehicle.GetPositionEcl();
+            double vehicleDistance = VectorMath.Length(vehiclePositionEcl);
+            if(vehicleDistance <= 1e-6)
+                return;
 
-        double3 starDirEcl = StellariumRenderer.ApplyAlignment(rawDir);
-        double len = VectorMath.Length(starDirEcl);
-        if(len <= 1e-12)
-            return;
-        starDirEcl /= len;
+            starDirEcl = -vehiclePositionEcl / vehicleDistance;
+        } else {
+            if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 rawDir))
+                return;
+
+            starDirEcl = StellariumRenderer.ApplyAlignment(rawDir);
+            double len = VectorMath.Length(starDirEcl);
+            if(len <= 1e-12)
+                return;
+            starDirEcl /= len;
+        }
 
         // In KSA, VehicleReferenceFrame.EclBody is the ecliptic body-reference frame,
         // which relates to Ecliptic (CCE) coordinates via BODY2UPFRAME (negating Y and Z).

@@ -12,6 +12,9 @@ public readonly record struct StarInformation(
     int Hip,
     string DisplayName,
     string Bayer,
+    string ConstellationAbbrev,
+    bool HasProperName,
+    string HipparcosNumber,
     string RightAscension,
     string Declination,
     string Magnitude,
@@ -24,6 +27,12 @@ public readonly record struct ConstellationInformation(
     string Name,
     IReadOnlyList<StarInformation> Stars);
 
+// A Bayer-designated star paired with its display name for the Information tab's Bayer
+// selection mode, e.g. "Cassiopeia Iota" - full constellation name plus expanded Bayer letter.
+public readonly record struct BayerStarInformation(
+    StarInformation Star,
+    string DisplayName);
+
 public class SkyCulture {
     public string Name { get; init; } = "";
     public Dictionary<string, List<ConstellationSegment>> Constellations { get; } = new();
@@ -31,6 +40,18 @@ public class SkyCulture {
 }
 
 public static class SkyCulturesRenderer {
+    // Offset added to a catalog row's own id to synthesize a stable "hip" key for named/Bayer stars
+    // that have no real Hipparcos number, keeping them clear of the real HIP range (max ~120,416).
+    private const int SyntheticHipOffset = 10_000_000;
+
+    // The catalog hip resolved to the star named "Sol" - the game's actual central star, which sits
+    // at the origin of its own coordinate system rather than at a fixed sky direction. If the game
+    // ever renames or replaces the central star (e.g. traveling to another system), this should be
+    // re-pointed at whatever the new central star's catalog entry is.
+    private static int _centralStarHip;
+
+    public static bool IsCentralStar(int hip) => hip > 0 && hip == _centralStarHip;
+
     private static readonly List<SkyCulture> _skyCultures = new();
 
     public static IReadOnlyList<SkyCulture> SkyCultures => _skyCultures;
@@ -87,6 +108,52 @@ public static class SkyCulturesRenderer {
         }
 
         return constellations;
+    }
+
+    // All catalog stars with a proper name, sorted alphabetically for the Information tab's Proper selection mode.
+    public static IReadOnlyList<StarInformation> GetAllNamedStars() {
+        List<StarInformation> stars = new();
+        foreach(StarInformation information in hipToInformation.Values) {
+            if(information.HasProperName)
+                stars.Add(information);
+        }
+
+        stars.Sort((left, right) => string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase));
+        return stars;
+    }
+
+    // All catalog stars with a Bayer designation, sorted alphabetically by their full "Constellation Letter"
+    // display name for the Information tab's Bayer selection mode.
+    public static IReadOnlyList<BayerStarInformation> GetAllBayerStars() {
+        List<BayerStarInformation> stars = new();
+        foreach(StarInformation information in hipToInformation.Values) {
+            if(string.IsNullOrWhiteSpace(information.Bayer))
+                continue;
+
+            string constellationName = GetConstellationFullName(information.ConstellationAbbrev);
+            string displayName = string.IsNullOrWhiteSpace(constellationName)
+                ? information.Bayer
+                : $"{constellationName} {information.Bayer}";
+            stars.Add(new BayerStarInformation(information, displayName));
+        }
+
+        stars.Sort((left, right) => string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase));
+        return stars;
+    }
+
+    // Resolves a catalog constellation abbreviation (e.g. "Cas") to the active sky culture's full
+    // English name (e.g. "Cassiopeia"), falling back to the abbreviation if no culture is active or
+    // it has no name for that abbreviation.
+    private static string GetConstellationFullName(string abbrev) {
+        if(string.IsNullOrWhiteSpace(abbrev))
+            return abbrev;
+
+        SkyCulture? culture = ActiveSkyCulture;
+        if(culture != null && culture.ConstellationNames.TryGetValue(abbrev, out ConstellationName? name)) {
+            return !string.IsNullOrWhiteSpace(name.EnglishName) ? name.EnglishName : name.NativeName;
+        }
+
+        return abbrev;
     }
 
     public static bool TryGetStarDirection(int hip, out double3 direction) {
@@ -230,6 +297,39 @@ public static class SkyCulturesRenderer {
         }
     }
 
+    // Draws a single star's name at its catalog position - used for the Information tab's
+    // Proper/Bayer dropdown selection, independent of the active sky culture's asterism labels.
+    // The central star (Sol) has no meaningful catalog direction, so its label is placed at its
+    // real in-game position instead.
+    public static void DrawSelectedDropdownStarName(ImDrawListPtr draw_list, Camera camera, double3 center, double radius) {
+        if(!OhMyStarsWindow.TryGetDropdownSelectedStarLabel(out int hip, out string name))
+            return;
+
+        double3 position;
+        if(IsCentralStar(hip)) {
+            IParentBody? centralStarBody = StellariumRenderer.GetCentralStarBody(camera);
+            if(centralStarBody == null)
+                return;
+
+            position = camera.GetPositionEgo(centralStarBody);
+        } else {
+            if(!hipToDirection.TryGetValue(hip, out double3 direction))
+                return;
+
+            position = center + StellariumRenderer.ApplyAlignment(direction) * radius;
+        }
+
+        if(!camera.IsPointWithinFov(position))
+            return;
+        if(!StellariumRenderer.IsVisibleFromCamera(position))
+            return;
+
+        float2 screen = StellariumRenderer.EgoToOverlayScreen(camera, position);
+        ImDrawListExtensions.AddText(draw_list, screen, white, name);
+    }
+
+
+
     public static void ResolveSegments() {
         resolvedSegments.Clear();
         resolvedLabels.Clear();
@@ -362,6 +462,7 @@ public static class SkyCulturesRenderer {
         hipToDirection.Clear();
         hipToName.Clear();
         hipToInformation.Clear();
+        _centralStarHip = 0;
 
         if(!File.Exists(path))
             return;
@@ -375,6 +476,7 @@ public static class SkyCulturesRenderer {
 
         string[] headers = SplitCsvLine(headerLine);
 
+        int idIndex = Array.IndexOf(headers, "id");
         int hipIndex = Array.IndexOf(headers, "hip");
         int raIndex = Array.IndexOf(headers, "ra");
         int decIndex = Array.IndexOf(headers, "dec");
@@ -408,20 +510,30 @@ public static class SkyCulturesRenderer {
                 continue;
 
             string hipText = parts[hipIndex];
+            string properName = parts[properIndex];
+            string bayerRaw = parts[bayerIndex];
+            bool hasProperName = !string.IsNullOrWhiteSpace(properName);
+            bool hasBayer = !string.IsNullOrWhiteSpace(bayerRaw);
 
-            if(string.IsNullOrWhiteSpace(hipText))
-                continue;
-
-            if(!int.TryParse(
+            bool hasRealHip = int.TryParse(
                 hipText,
                 NumberStyles.Integer,
                 CultureInfo.InvariantCulture,
-                out int hip)) {
+                out int parsedHip) && parsedHip > 0;
+
+            int hip;
+            if(hasRealHip) {
+                hip = parsedHip;
+            } else if((hasProperName || hasBayer) &&
+                idIndex >= 0 && idIndex < parts.Length &&
+                int.TryParse(parts[idIndex], NumberStyles.Integer, CultureInfo.InvariantCulture, out int rowId)) {
+                // Some named/Bayer catalog stars (e.g. Wolf 359) have no Hipparcos number at all. Synthesize
+                // a stable id from the catalog's own row id so they can still be selected, oriented to, and
+                // labeled - offset keeps synthetic ids clear of the real HIP range (max around 120,416).
+                hip = SyntheticHipOffset + rowId;
+            } else {
                 continue;
             }
-
-            if(hip <= 0)
-                continue;
 
             if(!double.TryParse(
                 parts[raIndex],
@@ -442,22 +554,45 @@ public static class SkyCulturesRenderer {
             hipToDirection[hip] = StarDirectionConverter.RaDecToDirection(raHours, decDegrees);
 
             string displayName = GetDisplayName(
-                parts[properIndex],
+                properName,
                 parts[constellationIndex],
-                parts[bayerIndex],
+                bayerRaw,
                 hip);
             hipToName[hip] = displayName;
             hipToInformation[hip] = new StarInformation(
                 hip,
                 displayName,
-                ExpandBayerDesignation(parts[bayerIndex]),
+                ExpandBayerDesignation(bayerRaw),
+                parts[constellationIndex],
+                hasProperName,
+                hasRealHip ? hip.ToString(CultureInfo.InvariantCulture) : string.Empty,
                 FormatRightAscension(raHours),
                 FormatSignedDeclination(parts[decIndex]),
                 parts[magnitudeIndex],
                 parts[absoluteMagnitudeIndex],
                 parts[spectralTypeIndex],
-                parts[distanceIndex]);
+                FormatDistanceLightYears(parts[distanceIndex]));
+
+            if(string.Equals(properName.Trim(), "Sol", StringComparison.OrdinalIgnoreCase)) {
+                _centralStarHip = hip;
+            }
         }
+    }
+
+    // The catalog's "dist" column is in parsecs; the Information tab labels the field "Distance (LY)",
+    // so it must be converted to light years before display.
+    private const double ParsecsToLightYears = 3.26156377695d;
+
+    private static string FormatDistanceLightYears(string distanceParsecs) {
+        if(!double.TryParse(
+            distanceParsecs,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double parsecs)) {
+            return distanceParsecs;
+        }
+
+        return (parsecs * ParsecsToLightYears).ToString("0.###", CultureInfo.InvariantCulture);
     }
 
     private static string FormatSignedDeclination(string declination) {

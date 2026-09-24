@@ -101,6 +101,7 @@ internal unsafe static class StellariumRenderer {
 
         SkyMarkingsRenderer.Draw(draw_list.Value, camera, center, radius);
         SkyCulturesRenderer.Draw(draw_list.Value, camera, center, radius, showAsterisms, showAsterismNames, showStarNames);
+        SkyCulturesRenderer.DrawSelectedDropdownStarName(draw_list.Value, camera, center, radius);
 
         if(showIAUConstellations)
             IAUConstellationsRenderer.Draw(draw_list.Value, camera, center, radius);
@@ -113,12 +114,23 @@ internal unsafe static class StellariumRenderer {
     }
 
     private static void DrawStarPointer(ImDrawListPtr drawList, Camera camera, double radius) {
-        if(!OhMyStarsWindow.TryGetStarPointer(out int hip, out float2 windowPosition, out float2 windowSize) ||
-            !SkyCulturesRenderer.TryGetStarDirection(hip, out double3 direction)) {
+        if(!OhMyStarsWindow.TryGetStarPointer(out int hip, out float2 windowPosition, out float2 windowSize))
             return;
+
+        double3 position;
+        if(SkyCulturesRenderer.IsCentralStar(hip)) {
+            IParentBody? centralStarBody = GetCentralStarBody(camera);
+            if(centralStarBody == null)
+                return;
+
+            position = camera.GetPositionEgo(centralStarBody);
+        } else {
+            if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 direction))
+                return;
+
+            position = ApplyAlignment(direction) * radius;
         }
 
-        double3 position = ApplyAlignment(direction) * radius;
         if(!TryGetStarPointerTarget(camera, position, out float2 target))
             return;
 
@@ -255,6 +267,24 @@ internal unsafe static class StellariumRenderer {
         };
     }
 
+    // Walks a parent-body chain up to its root, which is the star at the center of the current
+    // system (StellarBody.GetPositionEcl() is always zero - it defines the coordinate origin).
+    private static IParentBody GetRootBody(IParentBody parentBody) {
+        IParentBody root = parentBody;
+        while(root is IOrbiter orbiter && !ReferenceEquals(orbiter.Parent, root)) {
+            root = orbiter.Parent;
+        }
+
+        return root;
+    }
+
+    // The star at the center of the camera's current system - today this is always Sol, but should
+    // the game ever support other systems, this follows whatever body the camera is actually orbiting.
+    public static IParentBody? GetCentralStarBody(Camera camera) {
+        IParentBody? occluderRoot = GetOccluderRoot(camera.Following);
+        return occluderRoot == null ? null : GetRootBody(occluderRoot);
+    }
+
     public static bool IsVisibleFromCamera(double3 position) {
         double distance = VectorMath.Length(position);
         if(distance <= 0d)
@@ -287,13 +317,7 @@ internal unsafe static class StellariumRenderer {
 
     private static void CollectCelestialOccluders(Camera camera, IParentBody parentBody) {
         celestialOccluders.Clear();
-
-        IParentBody root = parentBody;
-        while(root is IOrbiter orbiter && !ReferenceEquals(orbiter.Parent, root)) {
-            root = orbiter.Parent;
-        }
-
-        CollectCelestialOccludersRecursive(camera, root);
+        CollectCelestialOccludersRecursive(camera, GetRootBody(parentBody));
     }
 
     private static void CollectCelestialOccludersRecursive(Camera camera, IParentBody body) {
