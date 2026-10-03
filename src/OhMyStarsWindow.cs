@@ -117,6 +117,17 @@ internal static class OhMyStarsWindow {
         _showWindow = !_showWindow;
     }
 
+    // Open/closed state last written to settings.ini; ImGui's imgui.ini only keeps position/size, not visibility.
+    private static bool _savedShowWindow = true;
+    private static bool _savedShowStarEditor = true;
+
+    // Called every frame so toggles from the mod menu and the windows' close (X) buttons both get persisted.
+    public static void PersistWindowOpenStates() {
+        if(_showWindow != _savedShowWindow || StarsEditWindow.IsOpen != _savedShowStarEditor) {
+            SaveSettings();
+        }
+    }
+
     public static void LoadSettings() {
         string? settingsPath = GetSettingsFilePath();
         if(string.IsNullOrWhiteSpace(settingsPath)) {
@@ -129,6 +140,11 @@ internal static class OhMyStarsWindow {
         }
 
         Dictionary<string, string> values = ReadSettingsFile(settingsPath);
+
+        _showWindow = ReadBool(values, "ShowWindow", true);
+        StarsEditWindow.IsOpen = ReadBool(values, "ShowStarEditor", true);
+        _savedShowWindow = _showWindow;
+        _savedShowStarEditor = StarsEditWindow.IsOpen;
 
         StellariumRenderer.showStarNames = ReadBool(values, "ShowStarNames", Defaults.ShowStarNames);
         StellariumRenderer.showIAUConstellations = ReadBool(values, "ShowIAUConstellations", Defaults.ShowIAUConstellations);
@@ -176,6 +192,8 @@ internal static class OhMyStarsWindow {
 
         string[] lines = new[] {
             "[Window]",
+            $"ShowWindow={_showWindow.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowStarEditor={StarsEditWindow.IsOpen.ToString(CultureInfo.InvariantCulture)}",
             $"Tab={GetPersistableTab()}",
             $"ShowStarNames={StellariumRenderer.showStarNames.ToString(CultureInfo.InvariantCulture)}",
             $"ShowIAUConstellations={StellariumRenderer.showIAUConstellations.ToString(CultureInfo.InvariantCulture)}",
@@ -206,6 +224,8 @@ internal static class OhMyStarsWindow {
         };
 
         File.WriteAllLines(settingsPath, lines);
+        _savedShowWindow = _showWindow;
+        _savedShowStarEditor = StarsEditWindow.IsOpen;
     }
 
     private static void ResetToDefaults() {
@@ -309,6 +329,7 @@ internal static class OhMyStarsWindow {
         }
         ConsoleWidgets.EndRow();
 
+        ImGui.NewLine();
         DrawThickSeparator();
         DrawSectionHeader("Sky Culture", "Selects the Stellarium sky culture that provides the asterism lines, constellation names, and star labels.", ref _skyCultureExpanded);
 
@@ -479,7 +500,10 @@ internal static class OhMyStarsWindow {
 
         ImGui.Dummy(new float2(0f, 4f));
         ImGui.Separator();
+        ImGui.NewLine();
 
+        // Puts the next button on the right hand side of the window.
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize("Reset to Defaults").X - (ImGui.GetStyle().ItemSpacing.X * 3));
         if(ConsoleWidgets.Button("Reset to Defaults")) {
             ResetToDefaults();
         }
@@ -492,7 +516,7 @@ internal static class OhMyStarsWindow {
     // a 1px hairline on the line at the current cursor Y and then advances past it; this paints a
     // 3px rule centered on that same separator line position, so it sits exactly where the normal
     // separator would instead of overlapping the widgets below.
-    private static void DrawThickSeparator() {
+    internal static void DrawThickSeparator() {
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         float2 pos = ImGui.GetCursorScreenPos();
         float startX = pos.X + ImGui.GetCursorPosX();
@@ -653,7 +677,7 @@ internal static class OhMyStarsWindow {
 
     // Same layout/rounding/padding as ConsoleWidgets' filled buttons (see PrimaryButton in
     // ConsoleWidgets.DrawButtonCore), but filled with the window title bar color and white text.
-    private static bool DrawColoredTabButton(string label) {
+    internal static bool DrawColoredTabButton(string label) {
         ConsoleStyle.PushLabelFont();
         float2 textSize = ImGui.CalcTextSize(label);
         float fontSize = ImGui.GetFontSize();

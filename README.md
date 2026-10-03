@@ -46,3 +46,13 @@ Oh My Stars is a fork and continuation of the mod StellariumCatalog sanctioned b
 
 
 **AI Disclaimer:** This mod was made with the help of AI (but not entirely!).
+
+## Build settings defaults
+
+[src/settings.ini](src/settings.ini) is the authoritative settings file for testing and releases.
+Every build copies it to the build output and overwrites `settings.ini` in
+`%USERPROFILE%\Documents\My Games\Kitten Space Agency\mods\OhMyStars`, including when the
+installed settings were changed during testing.
+
+To change the shipped defaults, edit the source settings before building. Close the game
+before building or collecting release files so it cannot save testing settings over the defaults.

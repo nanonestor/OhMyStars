@@ -21,18 +21,31 @@ public class OhMyStarsEntryPoint {
 
         StellariumRenderer.Init();
         OhMyStarsWindow.LoadSettings();
+
+        StarsEditWindow.OnAllModsLoaded();
+    }
+
+    // Star patches must be in place before the game builds its star technique and loads star binaries.
+    [StarMapBeforeMain]
+    public static void OnBeforeMain() {
+        StarsEditPatcher.Patch();
     }
 
     [ModMenuEntry("Oh My Stars")]
     public static void DrawMenu() {
-        if(ImGui.MenuItem("Open Window")) {
+        if(ImGui.MenuItem("Oh My Stars Window")) {
             OhMyStarsWindow.ToggleWindow();
+        }
+        if(ImGui.MenuItem("Star Editor")) {
+            StarsEditWindow.ToggleWindow();
         }
     }
 
     [StarMapBeforeGui]
     public static void OnBeforeGui(double dt) {
         OhMyStarsWindow.Draw();
+        StarsEditWindow.Draw();
+        OhMyStarsWindow.PersistWindowOpenStates();
     }
 
     [StarMapAfterGui]

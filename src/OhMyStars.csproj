@@ -40,7 +40,7 @@
     <Copy SourceFiles="$(BuildDir)$(ModNamespace).deps.json" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)$(ModNamespace).dll" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="ModMenu.Attributes.dll" DestinationFolder="$(SendBuildToTestDir)" />
-    <Copy SourceFiles="$(BuildDir)settings.ini" DestinationFolder="$(SendBuildToTestDir)" Condition="Exists('$(BuildDir)settings.ini')" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\settings.ini" DestinationFolder="$(SendBuildToTestDir)" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(BuildDir)athyg_32_reduced_m10.csv" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)NOTICE.txt" DestinationFolder="$(SendBuildToTestDir)" />
     <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures" />
