@@ -233,10 +233,19 @@ internal static class StarsEditWindow
 		LoadSettingsFromDisk(updateStatus: false);
 		LoadSavedSettings();
 		RebuildEntriesFromMods();
+		_preParallaxBinaries = StarParallax.Enabled ? CurrentBinaryKeys() : new List<string>();
 		EnforceParallaxBinarySelection();
 		_initialSliders = CaptureSliderSettings();
 		_initialBinaries = CurrentBinaryKeys();
 		_pendingInitialSettingsApply = true;
+	}
+
+	internal static void Update()
+	{
+		if (_pendingInitialSettingsApply && CanApply() && ApplySelection())
+		{
+			_pendingInitialSettingsApply = false;
+		}
 	}
 
 	public static void Draw()
@@ -264,11 +273,6 @@ internal static class StarsEditWindow
 
 		bool sliderChanged = false;
 		bool canApply = _mod is not null && GetStarTechnique() is not null;
-		if (_pendingInitialSettingsApply && canApply)
-		{
-			ApplySelection();
-			_pendingInitialSettingsApply = false;
-		}
 
 		OhMyStarsWindow.DrawThickSeparator();
 		ConsoleWidgets.Readout("Status", _status);
@@ -752,26 +756,26 @@ internal static class StarsEditWindow
 		}
 	}
 
-	private static void ApplySelection()
+	private static bool ApplySelection()
 	{
 		if (_mod is null)
 		{
 			_status = "Cannot apply: mod entry not resolved.";
-			return;
+			return false;
 		}
 
 		InstancedStarTechnique? starTechnique = GetStarTechnique();
 		if (starTechnique is null)
 		{
 			_status = "Cannot apply: star technique not available yet.";
-			return;
+			return false;
 		}
 
 		List<Mod> loadedMods = GetAllLoadedMods();
 		if (loadedMods.Count == 0)
 		{
 			_status = "Cannot apply: no loaded mods discovered.";
-			return;
+			return false;
 		}
 
 		Mod? coreOwnerMod = ResolveCoreOwnerMod(loadedMods);
@@ -805,7 +809,7 @@ internal static class StarsEditWindow
 			if (!SetStarBinariesForMod(kvp.Key, selected))
 			{
 				_status = $"Cannot apply: failed to update StarBinaries for mod '{GetModLabel(kvp.Key)}'.";
-				return;
+				return false;
 			}
 
 			selectedTotal += selected.Length;
@@ -841,6 +845,7 @@ internal static class StarsEditWindow
 		{
 			_status = $"Loaded stars: {loadedStars} | Capacity: {capacity}.";
 		}
+		return true;
 	}
 
 	internal static InstancedStarTechnique? GetStarTechnique()

@@ -43,6 +43,7 @@ public class OhMyStarsEntryPoint {
 
     [StarMapBeforeGui]
     public static void OnBeforeGui(double dt) {
+        StarsEditWindow.Update();
         OhMyStarsWindow.Draw();
         StarsEditWindow.Draw();
         StarParallax.Update();

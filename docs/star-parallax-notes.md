@@ -6,6 +6,8 @@ The feature is on by default. You can toggle it in two places:
 - the main OhMyStars window, under "Show RA/Dec grid";
 - the "Parallax (Experimental)" section of the star editor window, which also has the cutoff and hide-radius sliders.
 
+At startup, the selected binaries and slider settings are applied as soon as the star renderer is ready, even when either mod window is closed or collapsed. No off/on toggle is needed. With parallax enabled at startup, disabling it restores the binary selection from before the automatic switch.
+
 ## Design rules (agreed — keep these)
 - **Static stars.** Star positions do not change over time. Proper motion is not applied.
 - **Sun at the origin.** The Sun is the origin of both the catalog and the game world. So `camera.PositionEcl / MetersPerParsec` is the camera's position in parsecs.
@@ -35,6 +37,7 @@ The star editor's size and colour sliders (gamma, offset, floor, RGB multipliers
 - **`src/StarsEditWindow.cs`**
   - Parallax UI and settings persistence.
   - Bin switching, using `ParallaxBinaryFileName` and `_preParallaxBinaries`.
+  - `Update` applies pending startup settings independently of window visibility and retries if the renderer is not ready or the apply cannot complete.
 - **`src/SkyCulturesRenderer.cs`**: the HIP lookups behind lines, labels and the pointer.
   - `hipToDirection` holds static directions and `hipToPositionPc` holds positions in parsecs.
     - `TryGetStarDirection` returns the direction from the camera.
