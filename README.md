@@ -47,6 +47,21 @@ Oh My Stars is a fork and continuation of the mod StellariumCatalog sanctioned b
 
 **AI Disclaimer:** This mod was made with the help of AI (but not entirely!).
 
+## Experimental: moving stars (parallax)
+
+When this option is on, stars move as the camera moves. Each star's position comes from the catalog with the Sun at the origin. Brightness is based on absolute magnitude and the real distance from the camera, with no exaggeration. Proper motion is ignored, so the stars themselves never move over time.
+
+The option is **on by default**. You can turn it on or off in the main OhMyStars window, under "Show RA/Dec grid". More settings are in the star editor's "Parallax (Experimental)" section:
+
+- **Moving-star cutoff** (default 500 pc): stars farther than this from the Sun stay fixed in place. Lowering it, or turning the feature off, reduces the performance cost.
+- **Hide radius** (default 0.1 pc): background stars this close to the camera are hidden, so the game's own star body takes their place.
+
+Turning the option on automatically switches to the bundled parallax star binary. Turning it off restores your previous binaries.
+
+Constellation lines, labels and the star pointer follow the camera. The navball marker follows the vessel.
+
+Developer notes are in [docs/star-parallax-notes.md](docs/star-parallax-notes.md).
+
 ## Build settings defaults
 
 [src/settings.ini](src/settings.ini) is the authoritative settings file for testing and releases.
