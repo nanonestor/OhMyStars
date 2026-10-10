@@ -82,6 +82,8 @@ internal static class StarsEditWindow
 	private static SliderSettings _initialSliders = new SliderSettings();
 
 	private static List<string> _initialBinaries = new List<string>();
+	private static List<string> _preParallaxBinaries = new List<string>();
+	private const string ParallaxBinaryFileName = "ohmystars_parallax_99k.bin";
 
 	private const string ModNamespace = "OhMyStars";
 	private const string SettingsFileName = "starsedit_settings.ini";
@@ -153,6 +155,62 @@ internal static class StarsEditWindow
 		public float GreenMultiplier { get; init; } = 1f;
 
 		public float BlueMultiplier { get; init; } = 1f;
+
+		public bool ParallaxEnabled { get; init; } = true;
+
+		public float ParallaxCutoffPc { get; init; } = StarParallax.DefaultCutoffPc;
+
+		public float ParallaxHideRadiusPc { get; init; } = StarParallax.DefaultHideRadiusPc;
+	}
+
+	private static void DrawParallaxSection()
+	{
+		ImGui.NewLine();
+		OhMyStarsWindow.DrawThickSeparator();
+		ConsoleWidgets.RegionHeader("Parallax (Experimental)");
+
+		ConsoleWidgets.BeginRow("Enable Parallax");
+		if (_showTooltips && ConsoleWidgets.RowHovered)
+		{
+			ConsoleWidgets.Tooltip("Moves stars as the camera moves away from the Sun (true scale) and rescales their brightness from absolute magnitude. Enabling switches the star binaries to " + ParallaxBinaryFileName + " only; disabling restores the previous selection. Inside the solar system the shift is physically tiny. Constellation lines, labels, star names, the star pointer, navball marker and orient-to-star follow moved stars; Sol becomes a background star once the camera is beyond the hide radius. IAU boundaries and the RA/Dec grid stay fixed.");
+		}
+		bool parallaxEnabled = StarParallax.Enabled;
+		if (ConsoleWidgets.Checkbox("ParallaxEnabled", ref parallaxEnabled, pending: false))
+		{
+			SetParallaxEnabled(parallaxEnabled);
+		}
+		ConsoleWidgets.EndRow();
+
+		float cutoff = StarParallax.CutoffPc;
+		ConsoleWidgets.BeginRow("Moving Star Cutoff");
+		if (_showTooltips && ConsoleWidgets.RowHovered)
+		{
+			ConsoleWidgets.Tooltip("Only stars within this distance (parsecs) of the Sun move; farther stars stay static. 0 = no limit. Lower values are cheaper.");
+		}
+		string cutoffText = cutoff <= 0f ? "Unlimited" : cutoff.ToString("F0", CultureInfo.InvariantCulture) + " pc";
+		if (ConsoleWidgets.SliderFloat("ParallaxCutoff", ref cutoff, 0f, 1000f, cutoffText, pending: false))
+		{
+			StarParallax.CutoffPc = cutoff;
+			StarParallax.MarkDirty();
+		}
+		ConsoleWidgets.EndRow();
+
+		float hideRadius = StarParallax.HideRadiusPc;
+		ConsoleWidgets.BeginRow("Hide Stars Near Camera");
+		if (_showTooltips && ConsoleWidgets.RowHovered)
+		{
+			ConsoleWidgets.Tooltip("Background stars closer to the camera than this distance (parsecs) are hidden, so the game's detailed rendering of a visited star replaces the background dot. 1 pc = 206,265 AU. 0 = never hide.");
+		}
+		string hideText = hideRadius <= 0f ? "Off" : hideRadius.ToString("0.###", CultureInfo.InvariantCulture) + " pc";
+		if (ConsoleWidgets.SliderFloat("ParallaxHideRadius", ref hideRadius, 0f, 2f, hideText, pending: false))
+		{
+			StarParallax.HideRadiusPc = hideRadius;
+			StarParallax.MarkDirty();
+		}
+		ConsoleWidgets.EndRow();
+
+		string mappedText = "Stars with parallax data loaded: " + StarParallax.MappedStarCount;
+		ImGui.TextColored(in ConsoleStyle.TextMuted, mappedText);
 	}
 
 	public static void ToggleWindow()
@@ -175,6 +233,7 @@ internal static class StarsEditWindow
 		LoadSettingsFromDisk(updateStatus: false);
 		LoadSavedSettings();
 		RebuildEntriesFromMods();
+		EnforceParallaxBinarySelection();
 		_initialSliders = CaptureSliderSettings();
 		_initialBinaries = CurrentBinaryKeys();
 		_pendingInitialSettingsApply = true;
@@ -352,6 +411,8 @@ internal static class StarsEditWindow
 		{
 			ApplySelection();
 		}
+
+		DrawParallaxSection();
 
         ImGui.NewLine();
 		OhMyStarsWindow.DrawThickSeparator();
@@ -750,6 +811,7 @@ internal static class StarsEditWindow
 			selectedTotal += selected.Length;
 		}
 
+		StarParallax.ClearMap();
 		foreach (IViewport viewport in ViewportRegistry.Views)
 		{
 			starTechnique.ResetInstances(viewport);
@@ -770,6 +832,7 @@ internal static class StarsEditWindow
 		{
 			StarsEditPatcher.EndApplyCycle();
 		}
+		StarParallax.OnStarsReloaded(starTechnique);
 		if (StarsEditPatcher.DroppedSinceLastApply > 0)
 		{
 			_status = $"Loaded stars: {loadedStars} | Capacity: {capacity} | Dropped this apply: {StarsEditPatcher.DroppedSinceLastApply}.";
@@ -780,7 +843,7 @@ internal static class StarsEditWindow
 		}
 	}
 
-	private static InstancedStarTechnique? GetStarTechnique()
+	internal static InstancedStarTechnique? GetStarTechnique()
 	{
 		_starTechniqueField ??= typeof(Program).GetField("_starStarTechnique", PrivateStatic);
 		return _starTechniqueField?.GetValue(null) as InstancedStarTechnique;
@@ -988,7 +1051,12 @@ internal static class StarsEditWindow
 
 			if (picked < target && index >= (int)Math.Floor(nextPick))
 			{
+				int countBefore = starTechnique.InstanceCount[Program.MainViewport.ShaderSlot];
 				starTechnique.AddInstance(Program.MainViewport, forward, scale, new byte4(r, g, b, byte.MaxValue), 19.5f);
+				if (starTechnique.InstanceCount[Program.MainViewport.ShaderSlot] > countBefore)
+				{
+					StarParallax.Record(countBefore, fullPath, index);
+				}
 				picked++;
 				nextPick += step;
 			}
@@ -1126,6 +1194,10 @@ internal static class StarsEditWindow
 		_redMultiplier = settings.RedMultiplier;
 		_greenMultiplier = settings.GreenMultiplier;
 		_blueMultiplier = settings.BlueMultiplier;
+		StarParallax.Enabled = settings.ParallaxEnabled;
+		StarParallax.CutoffPc = Math.Clamp(settings.ParallaxCutoffPc, 0f, 1000f);
+		StarParallax.HideRadiusPc = Math.Clamp(settings.ParallaxHideRadiusPc, 0f, 2f);
+		StarParallax.MarkDirty();
 	}
 
 	private static SliderSettings CaptureSliderSettings()
@@ -1139,7 +1211,10 @@ internal static class StarsEditWindow
 			ColorMultiplier = _colorMultiplier,
 			RedMultiplier = _redMultiplier,
 			GreenMultiplier = _greenMultiplier,
-			BlueMultiplier = _blueMultiplier
+			BlueMultiplier = _blueMultiplier,
+			ParallaxEnabled = StarParallax.Enabled,
+			ParallaxCutoffPc = StarParallax.CutoffPc,
+			ParallaxHideRadiusPc = StarParallax.HideRadiusPc
 		};
 	}
 
@@ -1229,10 +1304,133 @@ internal static class StarsEditWindow
 		return Entries.Where(static e => e.Enabled).Select(static e => $"{e.ModName}|{e.RelativePath}").ToList();
 	}
 
+	private static BinaryEntry? FindParallaxEntry()
+	{
+		return Entries.FirstOrDefault(static e =>
+			string.Equals(Path.GetFileName(e.RelativePath), ParallaxBinaryFileName, StringComparison.OrdinalIgnoreCase) &&
+			File.Exists(e.FullPath));
+	}
+
+	// While parallax is on, the parallax binary is the only star binary; returns false (and turns parallax off) if it is missing.
+	private static bool EnforceParallaxBinarySelection()
+	{
+		if (!StarParallax.Enabled)
+		{
+			return true;
+		}
+
+		BinaryEntry? parallaxEntry = FindParallaxEntry();
+		if (parallaxEntry is null)
+		{
+			StarParallax.Enabled = false;
+			StarParallax.MarkDirty();
+			TimedAlert.CreateWarning($"Star parallax disabled: {ParallaxBinaryFileName} not found.", 8.0);
+			return false;
+		}
+
+		foreach (BinaryEntry entry in Entries)
+		{
+			entry.Enabled = ReferenceEquals(entry, parallaxEntry);
+		}
+
+		return true;
+	}
+
+	internal static void SetParallaxEnabled(bool enable)
+	{
+		if (enable == StarParallax.Enabled)
+		{
+			return;
+		}
+
+		SetParallaxEnabledCore(enable);
+		PersistParallaxEnabled();
+	}
+
+	// Writes only the parallax on/off flag into the [Sliders] block on disk, leaving the other stored values untouched.
+	private static void PersistParallaxEnabled()
+	{
+		try
+		{
+			string settingsPath = GetSettingsFilePath();
+			SliderSettings onDisk = File.Exists(settingsPath) ? ReadSettingsFile(settingsPath) : CaptureSliderSettings();
+			List<string>? lastUsedBinaries = File.Exists(settingsPath) ? ReadLastUsedBinaries(settingsPath) : null;
+			SliderSettings updated = new SliderSettings
+			{
+				SizeCurveGamma = onDisk.SizeCurveGamma,
+				SizeLog2Offset = onDisk.SizeLog2Offset,
+				RenderDataAdditiveOffset = onDisk.RenderDataAdditiveOffset,
+				SizeFloorThreshold = onDisk.SizeFloorThreshold,
+				ColorMultiplier = onDisk.ColorMultiplier,
+				RedMultiplier = onDisk.RedMultiplier,
+				GreenMultiplier = onDisk.GreenMultiplier,
+				BlueMultiplier = onDisk.BlueMultiplier,
+				ParallaxEnabled = StarParallax.Enabled,
+				ParallaxCutoffPc = onDisk.ParallaxCutoffPc,
+				ParallaxHideRadiusPc = onDisk.ParallaxHideRadiusPc
+			};
+			WriteSettingsFile(settingsPath, updated, lastUsedBinaries);
+		}
+		catch (Exception ex)
+		{
+			_status = $"Failed to save parallax setting: {ex.Message}";
+		}
+	}
+
+	private static void SetParallaxEnabledCore(bool enable)
+	{
+		if (enable)
+		{
+			List<string> previous = CurrentBinaryKeys();
+			StarParallax.Enabled = true;
+			if (!EnforceParallaxBinarySelection())
+			{
+				return;
+			}
+
+			_preParallaxBinaries = previous;
+			StarParallax.MarkDirty();
+			if (CanApply())
+			{
+				ApplySelection();
+			}
+
+			_status = $"Star parallax enabled; using {ParallaxBinaryFileName} only. " + _status;
+			return;
+		}
+
+		StarParallax.Enabled = false;
+		StarParallax.MarkDirty();
+		bool hasPrevious = _preParallaxBinaries.Any(static k =>
+			!string.Equals(Path.GetFileName(k), ParallaxBinaryFileName, StringComparison.OrdinalIgnoreCase));
+		if (hasPrevious)
+		{
+			List<string> missing = ApplyBinarySelection(_preParallaxBinaries);
+			if (CanApply())
+			{
+				ApplySelection();
+			}
+
+			_status = $"Star parallax disabled; restored previous star binaries.{MissingText(missing)} " + _status;
+		}
+		else
+		{
+			RestoreDefaultBinaries();
+			_status = "Star parallax disabled. " + _status;
+		}
+
+		_preParallaxBinaries = new List<string>();
+	}
+
 	private static void RestoreAllDefaults()
 	{
 		ApplySliderSettings(new SliderSettings());
 		RestoreDefaultBinaries();
+		_preParallaxBinaries = new List<string>();
+		if (StarParallax.Enabled && EnforceParallaxBinarySelection() && CanApply())
+		{
+			ApplySelection();
+		}
 		_status = "Restored default settings and star binaries. " + _status;
 	}
 
@@ -1248,6 +1446,7 @@ internal static class StarsEditWindow
 		ApplySliderSettings(ReadSettingsFile(settingsPath));
 		List<string>? binaries = ReadLastUsedBinaries(settingsPath);
 		List<string> missing = binaries is null ? new List<string>() : ApplyBinarySelection(binaries);
+		EnforceParallaxBinarySelection();
 		if (CanApply())
 		{
 			ApplySelection();
@@ -1260,6 +1459,7 @@ internal static class StarsEditWindow
 	{
 		ApplySliderSettings(_initialSliders);
 		List<string> missing = ApplyBinarySelection(_initialBinaries);
+		EnforceParallaxBinarySelection();
 		if (CanApply())
 		{
 			ApplySelection();
@@ -1318,6 +1518,7 @@ internal static class StarsEditWindow
 	{
 		ApplySliderSettings(saved.Sliders);
 		List<string> missing = ApplyBinarySelection(saved.Binaries);
+		EnforceParallaxBinarySelection();
 
 		if (canApply)
 		{
@@ -1465,7 +1666,10 @@ internal static class StarsEditWindow
 			ColorMultiplier = ReadFloat(values, nameof(SliderSettings.ColorMultiplier), defaults.ColorMultiplier),
 			RedMultiplier = ReadFloat(values, nameof(SliderSettings.RedMultiplier), defaults.RedMultiplier),
 			GreenMultiplier = ReadFloat(values, nameof(SliderSettings.GreenMultiplier), defaults.GreenMultiplier),
-			BlueMultiplier = ReadFloat(values, nameof(SliderSettings.BlueMultiplier), defaults.BlueMultiplier)
+			BlueMultiplier = ReadFloat(values, nameof(SliderSettings.BlueMultiplier), defaults.BlueMultiplier),
+			ParallaxEnabled = ReadInt(values, nameof(SliderSettings.ParallaxEnabled), defaults.ParallaxEnabled ? 1 : 0) != 0,
+			ParallaxCutoffPc = ReadFloat(values, nameof(SliderSettings.ParallaxCutoffPc), defaults.ParallaxCutoffPc),
+			ParallaxHideRadiusPc = ReadFloat(values, nameof(SliderSettings.ParallaxHideRadiusPc), defaults.ParallaxHideRadiusPc)
 		};
 	}
 
@@ -1506,6 +1710,9 @@ internal static class StarsEditWindow
 		lines.Add($"{nameof(SliderSettings.RedMultiplier)}={settings.RedMultiplier.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.GreenMultiplier)}={settings.GreenMultiplier.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.BlueMultiplier)}={settings.BlueMultiplier.ToString(CultureInfo.InvariantCulture)}");
+		lines.Add($"{nameof(SliderSettings.ParallaxEnabled)}={(settings.ParallaxEnabled ? 1 : 0)}");
+		lines.Add($"{nameof(SliderSettings.ParallaxCutoffPc)}={settings.ParallaxCutoffPc.ToString(CultureInfo.InvariantCulture)}");
+		lines.Add($"{nameof(SliderSettings.ParallaxHideRadiusPc)}={settings.ParallaxHideRadiusPc.ToString(CultureInfo.InvariantCulture)}");
 	}
 
 	private static float ReadFloat(Dictionary<string, string> values, string key, float defaultValue)

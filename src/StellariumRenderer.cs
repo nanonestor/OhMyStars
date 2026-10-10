@@ -35,7 +35,7 @@ internal unsafe static class StellariumRenderer {
     // of the two nearest corners; line color, and a rainbow override that cycles the color through
     // the spectrum over time.
     public static bool starPointerDualLines = false;
-    public static float3 starPointerColor = new float3(1f, 1f, 1f);
+    public static float3 starPointerColor = new float3(1f, 1f, 0f);
     public static bool starPointerRainbow = false;
 
     // Seconds for the rainbow override to complete one full trip through the visible spectrum.
@@ -118,12 +118,12 @@ internal unsafe static class StellariumRenderer {
             return;
 
         double3 position;
-        if(SkyCulturesRenderer.IsCentralStar(hip)) {
-            IParentBody? centralStarBody = GetCentralStarBody(camera);
-            if(centralStarBody == null)
-                return;
-
-            position = camera.GetPositionEgo(centralStarBody);
+        // Stars that exist as real game bodies (Sol, Alpha Centauri, Barnard's Star, Tau Ceti, ...) are
+        // targeted at their actual in-game position rather than the catalog sky direction.
+        if(SkyCulturesRenderer.TryGetGameBodyEgo(hip, camera, out double3 bodyEgo)) {
+            position = bodyEgo;
+        } else if(SkyCulturesRenderer.IsCentralStar(hip) && !StarParallax.IsCameraOutsideSolarSystem(camera)) {
+            return;
         } else {
             if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 direction))
                 return;

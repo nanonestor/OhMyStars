@@ -45,7 +45,7 @@ internal static class OhMyStarsWindow {
         public const float AlignmentRotationYDegrees = 0f;
         public const float AlignmentRotationZDegrees = 0f;
         public const bool StarPointerDualLines = false;
-        public static readonly float3 StarPointerColor = new float3(1f, 1f, 1f);
+        public static readonly float3 StarPointerColor = new float3(1f, 1f, 0f);
         public const bool StarPointerRainbow = false;
     }
 
@@ -326,6 +326,13 @@ internal static class OhMyStarsWindow {
         if(ConsoleWidgets.Checkbox("ShowRaDecGrid", ref showRaDecGridTop, pending: false)) {
             StellariumRenderer.showRaDecGrid = showRaDecGridTop;
             SaveSettings();
+        }
+        ConsoleWidgets.EndRow();
+
+        bool parallaxEnabledTop = StarParallax.Enabled;
+        ConsoleWidgets.BeginRow("Star Parallax (Experimental)");
+        if(ConsoleWidgets.Checkbox("ParallaxEnabledTop", ref parallaxEnabledTop, pending: false)) {
+            StarsEditWindow.SetParallaxEnabled(parallaxEnabledTop);
         }
         ConsoleWidgets.EndRow();
 
@@ -1230,17 +1237,34 @@ internal static class OhMyStarsWindow {
             return;
 
         double3 starDirEcl;
-        if(SkyCulturesRenderer.IsCentralStar(hip)) {
-            // The central star sits at the ecliptic origin, so the direction to it from the vehicle is
-            // just the negative of the vehicle's own (exact) position - no fixed-star alignment applies.
-            double3 vehiclePositionEcl = vehicle.GetPositionEcl();
-            double vehicleDistance = VectorMath.Length(vehiclePositionEcl);
-            if(vehicleDistance <= 1e-6)
+        // The vessel is what gets rotated (and what the navball shows), so it is the observer.
+        Camera? camera = Program.GetMainCamera();
+        double3 observerPositionEcl = vehicle.GetPositionEcl();
+        double3 observerPc = observerPositionEcl * (1.0 / StarParallax.MetersPerParsec);
+        double observerSunDistanceSq = observerPc.X * observerPc.X + observerPc.Y * observerPc.Y + observerPc.Z * observerPc.Z;
+        double hideRadius = Math.Max(StarParallax.HideRadiusPc, 1e-9);
+        bool observerInSolarSystem = !StarParallax.IsActive || observerSunDistanceSq <= hideRadius * hideRadius;
+
+        if(camera != null && SkyCulturesRenderer.TryGetGameBodyVectorFrom(hip, camera, vehicle, out double3 bodyVector)) {
+            // Stars that exist as game bodies (Sol, Alpha Centauri, Barnard's Star, Tau Ceti, ...) are
+            // oriented toward their real in-game position; no fixed-star alignment applies.
+            double bodyDistance = VectorMath.Length(bodyVector);
+            if(bodyDistance <= 1e-6)
                 return;
 
-            starDirEcl = -vehiclePositionEcl / vehicleDistance;
+            starDirEcl = bodyVector / bodyDistance;
+        } else if(SkyCulturesRenderer.IsCentralStar(hip) && observerInSolarSystem) {
+            // The central star sits at the ecliptic origin, so the direction to it from the observer is
+            // just the negative of the observer's own (exact) position - no fixed-star alignment applies.
+            double observerDistance = VectorMath.Length(observerPositionEcl);
+            if(observerDistance <= 1e-6)
+                return;
+
+            starDirEcl = -observerPositionEcl / observerDistance;
         } else {
-            if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 rawDir))
+            // With experimental parallax active the direction is taken from the vessel position to the
+            // star's 3D catalog position (Sol included once the vessel has left the solar system).
+            if(!SkyCulturesRenderer.TryGetStarDirectionFrom(hip, observerPc, out double3 rawDir))
                 return;
 
             starDirEcl = StellariumRenderer.ApplyAlignment(rawDir);

@@ -52,6 +52,56 @@ public static class SkyCulturesRenderer {
 
     public static bool IsCentralStar(int hip) => hip > 0 && hip == _centralStarHip;
 
+    // Catalog stars that also exist as real bodies in the game's celestial system. Their true in-game
+    // position differs from the catalog direction (especially up close), so pointers/labels/orientation
+    // target the body itself whenever it is loaded.
+    private static readonly Dictionary<int, string> hipToGameBodyId = new() {
+        { 70890, "ProximaCentauri" },
+        { 71683, "AlphaCentauriA" },
+        { 71681, "AlphaCentauriB" },
+        { 87937, "BarnardsStar" },
+        { 8102, "TauCeti" },
+    };
+
+    // Camera-relative (ego) position of the game body representing this catalog star, if one is loaded.
+    public static bool TryGetGameBodyEgo(int hip, Camera camera, out double3 ego) {
+        ego = default;
+        IPosition? body = ResolveGameBody(hip, camera);
+        if(body == null)
+            return false;
+
+        ego = camera.GetPositionEgo(body);
+        return !VectorMath.IsZero(ego);
+    }
+
+    // Vector from an observer (e.g. the controlled vessel) to the game body representing this catalog star,
+    // in ego/ecliptic axes.
+    public static bool TryGetGameBodyVectorFrom(int hip, Camera camera, IPosition observer, out double3 vector) {
+        vector = default;
+        if(observer == null)
+            return false;
+
+        IPosition? body = ResolveGameBody(hip, camera);
+        if(body == null)
+            return false;
+
+        vector = camera.GetPositionEgo(body) - camera.GetPositionEgo(observer);
+        return !VectorMath.IsZero(vector);
+    }
+
+    private static IPosition? ResolveGameBody(int hip, Camera camera) {
+        if(hip <= 0 || camera == null)
+            return null;
+
+        if(IsCentralStar(hip))
+            return Universe.CurrentSystem?.Get("Sol") ?? (IPosition?)StellariumRenderer.GetCentralStarBody(camera);
+
+        if(hipToGameBodyId.TryGetValue(hip, out string? bodyId))
+            return Universe.CurrentSystem?.Get(bodyId);
+
+        return null;
+    }
+
     private static readonly List<SkyCulture> _skyCultures = new();
 
     public static IReadOnlyList<SkyCulture> SkyCultures => _skyCultures;
@@ -156,8 +206,58 @@ public static class SkyCulturesRenderer {
         return abbrev;
     }
 
+    // Returns the star's direction as seen from the camera. With experimental parallax active this is the
+    // camera-relative direction to the star's 3D catalog position (matching the moved background stars).
     public static bool TryGetStarDirection(int hip, out double3 direction) {
-        return hipToDirection.TryGetValue(hip, out direction);
+        if(!hipToDirection.TryGetValue(hip, out double3 staticDirection)) {
+            direction = default;
+            return false;
+        }
+
+        Camera? camera = StarParallax.IsActive ? Program.GetMainCamera() : null;
+        if(camera == null) {
+            direction = staticDirection;
+            return true;
+        }
+
+        direction = GetEffectiveDirection(hip, staticDirection, StarParallax.GetCameraPc(camera), out _);
+        return true;
+    }
+
+    // Like TryGetStarDirection but from an arbitrary heliocentric observer position (parsecs).
+    public static bool TryGetStarDirectionFrom(int hip, double3 observerPc, out double3 direction) {
+        if(!hipToDirection.TryGetValue(hip, out double3 staticDirection)) {
+            direction = default;
+            return false;
+        }
+
+        direction = GetEffectiveDirection(hip, staticDirection, observerPc, out _);
+        return true;
+    }
+
+    // Static catalog direction unless parallax is active and the star has a usable 3D position inside the
+    // parallax cutoff; then the normalized camera->star vector. `hidden` mirrors the near-camera star cull.
+    private static double3 GetEffectiveDirection(int hip, double3 staticDirection, double3 cameraPc, out bool hidden) {
+        hidden = false;
+        if(!StarParallax.IsActive || !hipToPositionPc.TryGetValue(hip, out double3 position))
+            return staticDirection;
+
+        double3 delta = position - cameraPc;
+        double distanceSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z;
+        double hideRadius = Math.Max(0d, StarParallax.HideRadiusPc);
+        if(distanceSq <= hideRadius * hideRadius || distanceSq < 1e-18) {
+            hidden = true;
+            return staticDirection;
+        }
+
+        double cutoff = StarParallax.CutoffPc;
+        if(cutoff > 0d) {
+            double sunDistanceSq = position.X * position.X + position.Y * position.Y + position.Z * position.Z;
+            if(sunDistanceSq > cutoff * cutoff)
+                return staticDirection;
+        }
+
+        return delta / Math.Sqrt(distanceSq);
     }
 
     public static bool TryGetStarDisplayName(int hip, out string name) {
@@ -173,6 +273,9 @@ public static class SkyCulturesRenderer {
     private static readonly ImColor8 white = new ImColor8(255, 255, 255, 255);
 
     private static readonly Dictionary<int, double3> hipToDirection = new();
+    // Heliocentric position in parsecs, in the same rendered frame as hipToDirection (direction * dist),
+    // matching how tools/make_parallax_bin.py places stars in the parallax bin.
+    private static readonly Dictionary<int, double3> hipToPositionPc = new();
     private static readonly List<ResolvedConstellationSegment> resolvedSegments = new();
     private static readonly List<ResolvedConstellationLabel> resolvedLabels = new();
     private static readonly Dictionary<int, string> hipToName = new();
@@ -182,12 +285,14 @@ public static class SkyCulturesRenderer {
 
     private readonly record struct StarDirectionKey(int X, int Y, int Z);
 
-    public readonly record struct ResolvedConstellationSegment(double3 A, double3 B);
+    public readonly record struct ResolvedConstellationSegment(int HipA, double3 A, int HipB, double3 B);
     public readonly record struct ResolvedConstellationLabel(
         string Text,
-        double3 Direction);
+        double3 Direction,
+        int[] Hips);
 
     public readonly record struct ResolvedNamedStar(
+        int Hip,
         string Name,
         double3 Direction);
 
@@ -205,23 +310,30 @@ public static class SkyCulturesRenderer {
     }
 
     public static void Draw(ImDrawListPtr draw_list, Camera camera, double3 center, double radius, bool showAsterisms, bool showAsterismNames, bool showStarNames) {
+        double3 cameraPc = StarParallax.IsActive ? StarParallax.GetCameraPc(camera) : default;
+
         if(showAsterisms)
-            DrawAsterisms(draw_list, camera, center, radius);
+            DrawAsterisms(draw_list, camera, center, radius, cameraPc);
 
         if(showAsterismNames)
-            DrawAsterismNames(draw_list, camera, center, radius);
+            DrawAsterismNames(draw_list, camera, center, radius, cameraPc);
 
         if(showStarNames)
-            DrawStarNames(draw_list, camera, center, radius);
+            DrawStarNames(draw_list, camera, center, radius, cameraPc);
     }
 
 
-    public static void DrawAsterisms(ImDrawListPtr draw_list, Camera camera, double3 center, double radius) {
+    public static void DrawAsterisms(ImDrawListPtr draw_list, Camera camera, double3 center, double radius, double3 cameraPc) {
         ImColor8 lineColor = StellariumRenderer.ToLineColor(StellariumRenderer.asterismLineColor, StellariumRenderer.asterismLineOpacity);
 
         foreach(ResolvedConstellationSegment segment in resolvedSegments) {
-            double3 a = center + StellariumRenderer.ApplyAlignment(segment.A) * radius;
-            double3 b = center + StellariumRenderer.ApplyAlignment(segment.B) * radius;
+            double3 directionA = GetEffectiveDirection(segment.HipA, segment.A, cameraPc, out bool hiddenA);
+            double3 directionB = GetEffectiveDirection(segment.HipB, segment.B, cameraPc, out bool hiddenB);
+            if(hiddenA || hiddenB)
+                continue;
+
+            double3 a = center + StellariumRenderer.ApplyAlignment(directionA) * radius;
+            double3 b = center + StellariumRenderer.ApplyAlignment(directionB) * radius;
 
             double3 midpoint = (a + b) * 0.5d;
             if((camera.IsPointWithinFov(a) || camera.IsPointWithinFov(b) || camera.IsPointWithinFov(center)) &&
@@ -253,10 +365,30 @@ public static class SkyCulturesRenderer {
         ImDrawListPtr draw_list,
         Camera camera,
         double3 center,
-        double radius) {
+        double radius,
+        double3 cameraPc) {
 
         foreach(ResolvedConstellationLabel label in resolvedLabels) {
-            double3 position = center + StellariumRenderer.ApplyAlignment(label.Direction) * radius;
+            double3 labelDirection = label.Direction;
+            if(StarParallax.IsActive) {
+                double3 sum = default;
+                foreach(int hip in label.Hips) {
+                    if(!hipToDirection.TryGetValue(hip, out double3 staticDirection))
+                        continue;
+
+                    double3 direction = GetEffectiveDirection(hip, staticDirection, cameraPc, out bool hidden);
+                    if(!hidden)
+                        sum += direction;
+                }
+
+                double length = Math.Sqrt(sum.X * sum.X + sum.Y * sum.Y + sum.Z * sum.Z);
+                if(length <= 0.000001)
+                    continue;
+
+                labelDirection = sum / length;
+            }
+
+            double3 position = center + StellariumRenderer.ApplyAlignment(labelDirection) * radius;
 
             float2 screen = StellariumRenderer.EgoToOverlayScreen(camera, position);
 
@@ -278,9 +410,14 @@ public static class SkyCulturesRenderer {
         ImDrawListPtr draw_list,
         Camera camera,
         double3 center,
-        double radius) {
+        double radius,
+        double3 cameraPc) {
         foreach(ResolvedNamedStar namedStar in resolvedNamedStars) {
-            double3 position = center + StellariumRenderer.ApplyAlignment(namedStar.Direction) * radius;
+            double3 direction = GetEffectiveDirection(namedStar.Hip, namedStar.Direction, cameraPc, out bool hidden);
+            if(hidden)
+                continue;
+
+            double3 position = center + StellariumRenderer.ApplyAlignment(direction) * radius;
             if(!camera.IsPointWithinFov(position))
                 continue;
             if(!StellariumRenderer.IsVisibleFromCamera(position)) {
@@ -306,14 +443,17 @@ public static class SkyCulturesRenderer {
             return;
 
         double3 position;
-        if(IsCentralStar(hip)) {
-            IParentBody? centralStarBody = StellariumRenderer.GetCentralStarBody(camera);
-            if(centralStarBody == null)
+        if(TryGetGameBodyEgo(hip, camera, out double3 bodyEgo)) {
+            position = bodyEgo;
+        } else if(IsCentralStar(hip) && !StarParallax.IsCameraOutsideSolarSystem(camera)) {
+            return;
+        } else {
+            if(!hipToDirection.TryGetValue(hip, out double3 staticDirection))
                 return;
 
-            position = camera.GetPositionEgo(centralStarBody);
-        } else {
-            if(!hipToDirection.TryGetValue(hip, out double3 direction))
+            double3 cameraPc = StarParallax.IsActive ? StarParallax.GetCameraPc(camera) : default;
+            double3 direction = GetEffectiveDirection(hip, staticDirection, cameraPc, out bool hidden);
+            if(hidden)
                 return;
 
             position = center + StellariumRenderer.ApplyAlignment(direction) * radius;
@@ -358,7 +498,7 @@ public static class SkyCulturesRenderer {
                 if(!IsRenderedStar(a) || !IsRenderedStar(b))
                     continue;
 
-                resolvedSegments.Add(new ResolvedConstellationSegment(a, b));
+                resolvedSegments.Add(new ResolvedConstellationSegment(segment.FromHip, a, segment.ToHip, b));
 
                 labelStarHips.Add(segment.FromHip);
                 labelStarHips.Add(segment.ToHip);
@@ -402,13 +542,14 @@ public static class SkyCulturesRenderer {
 
             resolvedLabels.Add(new ResolvedConstellationLabel(
                 labelText,
-                labelDirection));
+                labelDirection,
+                labelStarHips.ToArray()));
         }
     }
 
     private static void AddResolvedStarName(int hip, double3 direction, HashSet<int> namedStarHips) {
         if(namedStarHips.Add(hip) && hipToName.TryGetValue(hip, out string? name)) {
-            resolvedNamedStars.Add(new ResolvedNamedStar(name, direction));
+            resolvedNamedStars.Add(new ResolvedNamedStar(hip, name, direction));
         }
     }
 
@@ -460,6 +601,7 @@ public static class SkyCulturesRenderer {
 
     private static void LoadCatalog(string path) {
         hipToDirection.Clear();
+        hipToPositionPc.Clear();
         hipToName.Clear();
         hipToInformation.Clear();
         _centralStarHip = 0;
@@ -551,7 +693,17 @@ public static class SkyCulturesRenderer {
                 continue;
             }
 
-            hipToDirection[hip] = StarDirectionConverter.RaDecToDirection(raHours, decDegrees);
+            double3 catalogDirection = StarDirectionConverter.RaDecToDirection(raHours, decDegrees);
+            hipToDirection[hip] = catalogDirection;
+
+            if(double.TryParse(
+                parts[distanceIndex],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double distancePc) &&
+                distancePc >= 0d && distancePc < 100000d) {
+                hipToPositionPc[hip] = catalogDirection * distancePc;
+            }
 
             string displayName = GetDisplayName(
                 properName,

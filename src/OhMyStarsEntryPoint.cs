@@ -45,6 +45,7 @@ public class OhMyStarsEntryPoint {
     public static void OnBeforeGui(double dt) {
         OhMyStarsWindow.Draw();
         StarsEditWindow.Draw();
+        StarParallax.Update();
         OhMyStarsWindow.PersistWindowOpenStates();
     }
 

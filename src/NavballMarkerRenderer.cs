@@ -74,10 +74,21 @@ internal static class NavballMarkerRenderer {
         if(vehicle == null)
             return;
 
-        if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 catalogDirection))
-            return;
+        double3 dirEcl;
+        Camera? camera = Program.GetMainCamera();
+        // The navball belongs to the controlled vessel, so directions are taken from the vessel's position.
+        if(camera != null && SkyCulturesRenderer.TryGetGameBodyVectorFrom(hip, camera, vehicle, out double3 bodyVector)) {
+            // Stars that exist as game bodies are aimed at their real position (no fixed-star alignment).
+            dirEcl = bodyVector;
+        } else {
+            double3 vesselPc = vehicle.GetPositionEcl() * (1.0 / StarParallax.MetersPerParsec);
+            if(!SkyCulturesRenderer.TryGetStarDirectionFrom(hip, vesselPc, out double3 catalogDirection))
+                return;
 
-        if(!TryGetMarkerScreenDirection(vehicle, catalogDirection, out float3 screenDirection))
+            dirEcl = StellariumRenderer.ApplyAlignment(catalogDirection);
+        }
+
+        if(!TryGetMarkerScreenDirection(vehicle, dirEcl, out float3 screenDirection))
             return;
 
         // markerPlacement (NavballMarkers.glsl) drops markers on the back hemisphere and past the
@@ -119,10 +130,10 @@ internal static class NavballMarkerRenderer {
         DrawCenterIndicatorOverMarker(drawList, markerCenter, glyphSize, ballCenter, ballExtends);
     }
 
-    private static bool TryGetMarkerScreenDirection(Vehicle vehicle, double3 starDirectionCce, out float3 screenDirection) {
+    private static bool TryGetMarkerScreenDirection(Vehicle vehicle, double3 dirEcl, out float3 screenDirection) {
         screenDirection = default;
 
-        double3 dirEcl = StellariumRenderer.ApplyAlignment(starDirectionCce);
+        dirEcl = dirEcl.NormalizeOrZero();
         if(VectorMath.IsZero(dirEcl))
             return false;
 

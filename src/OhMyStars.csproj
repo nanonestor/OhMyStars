@@ -32,6 +32,9 @@
     <ModContent Include="..\lines_in_20.txt">
       <TargetPath>lines_in_20.txt</TargetPath>
     </ModContent>
+    <ModContent Include="parallax\**\*">
+      <TargetPath>parallax\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </ModContent>
   </ItemGroup>
 
   <!-- Copies built mod files to the game's mods folder -->
@@ -43,7 +46,7 @@
     <Copy SourceFiles="$(MSBuildProjectDirectory)\settings.ini" DestinationFolder="$(SendBuildToTestDir)" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(BuildDir)athyg_32_reduced_m10.csv" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)NOTICE.txt" DestinationFolder="$(SendBuildToTestDir)" />
-    <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures" />
+    <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(BuildDir)parallax;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures;$(SendBuildToTestDir)\parallax" />
     <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(BuildDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(SendBuildToTestDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
   </Target>
