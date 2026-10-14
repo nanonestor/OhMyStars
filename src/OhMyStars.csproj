@@ -32,13 +32,15 @@
     <ModContent Include="..\lines_in_20.txt">
       <TargetPath>lines_in_20.txt</TargetPath>
     </ModContent>
-    <ModContent Include="parallax\**\*">
-      <TargetPath>parallax\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
-    </ModContent>
   </ItemGroup>
 
   <!-- Copies built mod files to the game's mods folder -->
   <Target Name="CopyCustomContent" AfterTargets="AfterBuild">
+    <!-- Legacy parallax-era output; its old .bin files were picked up as extra star binaries. -->
+    <RemoveDir Directories="$(SendBuildToTestDir)\parallax" />
+    <Delete Files="$(SendBuildToTestDir)\athyg_32_reduced_m10.toml" />
+    <!-- Old names/locations of the default star binary (now binaries\OhMyStars_stars.bin + binaries\OhMyStars__stars_IDs.bin). -->
+    <Delete Files="$(SendBuildToTestDir)\OhMyStars_curated.bin;$(SendBuildToTestDir)\OhMyStars_curated.ohmystars.bin;$(SendBuildToTestDir)\OhMyStars_curated.bin.version;$(SendBuildToTestDir)\OhMyStars_stars.bin;$(SendBuildToTestDir)\OhMyStars__stars_IDs.bin;$(SendBuildToTestDir)\OhMyStars_stars.bin.version" />
     <Copy SourceFiles="$(BuildDir)mod.toml" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)$(ModNamespace).deps.json" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)$(ModNamespace).dll" DestinationFolder="$(SendBuildToTestDir)" />
@@ -46,7 +48,7 @@
     <Copy SourceFiles="$(MSBuildProjectDirectory)\settings.ini" DestinationFolder="$(SendBuildToTestDir)" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(BuildDir)athyg_32_reduced_m10.csv" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)NOTICE.txt" DestinationFolder="$(SendBuildToTestDir)" />
-    <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(BuildDir)parallax;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures;$(SendBuildToTestDir)\parallax" />
+    <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures" />
     <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(BuildDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(SendBuildToTestDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
   </Target>
@@ -102,6 +104,9 @@
     </Reference>
     <Reference Include="Brutal.Core.Common">
       <HintPath>$(KSAGameDir)\Brutal.Core.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Brutal.Core.Strings">
+      <HintPath>$(KSAGameDir)\Brutal.Core.Strings.dll</HintPath>
     </Reference>
     <Reference Include="Brutal.Core.Logging">
       <HintPath>$(KSAGameDir)\Brutal.Core.Logging.dll</HintPath>

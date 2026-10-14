@@ -47,20 +47,39 @@ Oh My Stars is a fork and continuation of the mod StellariumCatalog sanctioned b
 
 **AI Disclaimer:** This mod was made with the help of AI (but not entirely!).
 
-## Experimental: moving stars (parallax)
+## 3D stars (game-native parallax)
 
-When this option is on, stars move as the camera moves. Each star's position comes from the catalog with the Sun at the origin. Brightness is based on absolute magnitude and the real distance from the camera, with no exaggeration. Proper motion is ignored, so the stars themselves never move over time.
+KSA now places stars in 3D itself. Each record in a star binary carries an inverse distance, so stars shift as the camera moves and their size follows true inverse-square brightness. Oh My Stars follows the game's shifted positions for constellation lines, pointer lines, constellation labels and star names. The navball marker still follows the vessel.
 
-The option is **on by default**. You can turn it on or off in the main OhMyStars window, under "Show RA/Dec grid". More settings are in the star editor's "Parallax (Experimental)" section:
+The mod's earlier experimental parallax feature has been removed because the game now does this. How it worked is recorded in [docs/legacy-experimental-parallax.md](docs/legacy-experimental-parallax.md).
 
-- **Moving-star cutoff** (default 500 pc): stars farther than this from the Sun stay fixed in place. Lowering it, or turning the feature off, reduces the performance cost.
-- **Hide radius** (default 0.1 pc): background stars this close to the camera are hidden, so the game's own star body takes their place.
+## Star binary generator
 
-Turning the option on automatically switches to the bundled parallax star binary. Turning it off restores your previous binaries.
+The star editor can build game star binaries from AT-HYG–style CSV catalogs. The output uses the game's format: a header (star count and magnitude scale) followed by 20-byte records. Each record holds a direction, a size, a colour and an inverse distance in parsecs.
 
-Constellation lines, labels and the star pointer follow the camera. The navball marker follows the vessel.
+- **Catalog selector** lists the CSV files in the mod folder (install and Documents) that have the required columns: a magnitude column, plus RA/Dec or x/y/z. Picking one fills the Input CSV path. **Rescan** refreshes the list.
+- **Analyze** does a dry run of the selected catalog with the current settings. It shows how many star entries would be written, with a breakdown by filter. No files are written.
+- **Magnitude Scale** is a numeric entry box with a default of `0.15` (range `0.01` to `5`). The value is written to the binary header for the game's size-vs-distance scaling.
+- **Directions** come from the catalog's RA/Dec, rotated into the game's ecliptic frame.
+- **Colour** uses the `ci` colour index. Tycho-2 rows (`mag_src = T`) give BT−VT rather than B−V, so they are scaled by 0.85 to approximate B−V.
+- **Filters**:
+  - Closer than (distance)
+  - Farther than (distance)
+  - Absolute magnitude below
+  - Apparent magnitude below
 
-Developer notes are in [docs/star-parallax-notes.md](docs/star-parallax-notes.md).
+  Each filter has its own toggle and value. Filters combine inclusively: a star is kept if it passes *any* enabled filter. With no filters enabled, every star is kept.
+- **Distance units:** a button switches the distance boxes between light years and parsecs. Values are converted to parsecs, the catalog's unit, before filtering.
+- **Add Sol** adds the Sun at 0,0,0. It is skipped if the file already contains a star there.
+- **Export current stars** writes every star the game currently has loaded to a new binary, header included. Add Sol works here too. After a Generate or Export finishes, the editor's binaries list refreshes on its own.
+- **Output naming:** the Output Name and Export Name boxes take a base name, not a path. Entering `mysky` writes `mysky_stars.bin` (the game binary) and `mysky_stars_IDs.bin` (the identity sister file). All generated and exported files go into the mod's `binaries` folder.
+- **Identity file:** a `<name>_stars_IDs.bin` sister file can be written next to each binary. It holds the identity data the mod uses to match stars, such as HIP and catalog IDs, names, magnitudes and colour index. The game ignores this file, and the mod skips it when it looks for star binaries.
+
+### Default binary and non-mod binaries
+
+- On first run the mod generates `binaries\OhMyStars_stars.bin` (plus its identity file `binaries\OhMyStars__stars_IDs.bin`) from `athyg_32_reduced_m10.csv` using magnitude scale `0.15` and selects it as the only active star binary. Existing default binaries from an older generation version are rebuilt automatically on launch; other generated binaries are left unchanged.
+- `.bin` files anywhere in each mod folder, including subfolders such as `binaries`, are listed. Identity sister files are skipped.
+- Enabling a binary that has no Oh My Stars identity file shows a confirmation. Confirming switches to **vanilla mode**: the mod's star transforms and sky overlays are disabled, and the stars render as the game normally draws them. Selecting only Oh My Stars binaries turns the mod's features back on.
 
 ## Build settings defaults
 

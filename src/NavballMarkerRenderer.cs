@@ -81,7 +81,7 @@ internal static class NavballMarkerRenderer {
             // Stars that exist as game bodies are aimed at their real position (no fixed-star alignment).
             dirEcl = bodyVector;
         } else {
-            double3 vesselPc = vehicle.GetPositionEcl() * (1.0 / StarParallax.MetersPerParsec);
+            double3 vesselPc = vehicle.GetPositionEcl() * GameStarSpace.ParsecsPerMeter;
             if(!SkyCulturesRenderer.TryGetStarDirectionFrom(hip, vesselPc, out double3 catalogDirection))
                 return;
 
@@ -142,7 +142,7 @@ internal static class NavballMarkerRenderer {
         doubleQuat cce2Cci = vehicle.Parent.GetCce2Cci();
         double3 dirCci = dirEcl.Transform(cce2Cci);
 
-        doubleQuat cci2Ctrl = vehicle.GetCtrl2Cci().Inverse();
+        doubleQuat cci2Ctrl = vehicle.GetHelm2Cci().Inverse();
         double3 dirScreen = dirCci.Transform(cci2Ctrl).Transform(Body2Screen).NormalizeOrZero();
         if(VectorMath.IsZero(dirScreen))
             return false;

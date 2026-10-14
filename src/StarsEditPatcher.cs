@@ -83,14 +83,16 @@ internal static class StarsEditPatcher
         Console.WriteLine("StarsEdit Harmony unpatched.");
     }
 
-    [HarmonyPatch(typeof(InstancedStarTechnique), nameof(InstancedStarTechnique.AddInstance),
-        new[] { typeof(IViewport), typeof(float3), typeof(byte), typeof(byte4), typeof(float) })]
+    // Since v2026.10.X.5597 stars are added once to a master list (AddStar) and the game copies them into the
+    // per-viewport instance buffers via ApplyMasks, so render tweaks are applied here at load time.
+    [HarmonyPatch(typeof(InstancedStarTechnique), nameof(InstancedStarTechnique.AddStar),
+        new[] { typeof(float3), typeof(float), typeof(byte), typeof(byte4) })]
     [HarmonyPrefix]
-    private static bool InstancedStarTechniqueAddInstancePrefix(InstancedStarTechnique __instance, IViewport viewport, ref byte scale, ref byte4 color)
+    private static bool InstancedStarTechniqueAddStarPrefix(InstancedStarTechnique __instance, ref byte scale, ref byte4 color)
     {
         bool isActiveCycle = Volatile.Read(ref _isApplyCycleActive) == 1;
 
-        if (IsBufferFull(__instance, viewport))
+        if (GameStarSpace.IsLoadedBufferFull(__instance))
         {
             if (isActiveCycle)
             {
@@ -98,6 +100,16 @@ internal static class StarsEditPatcher
             }
 
             return false;
+        }
+
+        if (StarsEditWindow.VanillaMode)
+        {
+            if (isActiveCycle)
+            {
+                Interlocked.Increment(ref _prefixSinceLastApply);
+            }
+
+            return true;
         }
 
         int additiveOffset = StarsEditWindow.RenderDataAdditiveOffset;
@@ -219,6 +231,7 @@ internal static class StarsEditPatcher
 
             _maxInstancesField.SetValue(starTechnique, requestedCapacity);
             _instancesField.SetValue(starTechnique, resized);
+            GameStarSpace.ResizeLoaded(starTechnique, requestedCapacity);
             _createInstanceBufferMethod.Invoke(starTechnique, null);
 
             int adapted = GetMaxInstances(starTechnique);
@@ -234,18 +247,6 @@ internal static class StarsEditPatcher
             Console.WriteLine($"StarsEdit could not adapt star capacity at runtime: {ex.Message}");
             return currentCapacity;
         }
-    }
-
-    private static bool IsBufferFull(InstancedStarTechnique starTechnique, IViewport viewport)
-    {
-        int[] instanceCount = starTechnique.InstanceCount;
-        if (viewport.ShaderSlot < 0 || viewport.ShaderSlot >= instanceCount.Length)
-        {
-            return false;
-        }
-
-        int maxInstances = GetMaxInstances(starTechnique);
-        return instanceCount[viewport.ShaderSlot] >= maxInstances;
     }
 
     private static int GetMaxInstances(InstancedStarTechnique starTechnique)

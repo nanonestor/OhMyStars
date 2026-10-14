@@ -46,7 +46,6 @@ public class OhMyStarsEntryPoint {
         StarsEditWindow.Update();
         OhMyStarsWindow.Draw();
         StarsEditWindow.Draw();
-        StarParallax.Update();
         OhMyStarsWindow.PersistWindowOpenStates();
     }
 

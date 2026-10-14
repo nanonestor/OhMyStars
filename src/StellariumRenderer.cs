@@ -1,4 +1,4 @@
-﻿using Brutal.ImGuiApi;
+using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using KSA;
 using System;
@@ -77,6 +77,9 @@ internal unsafe static class StellariumRenderer {
     }
 
     public static void Draw() {
+        if(StarsEditWindow.VanillaMode)
+            return;
+
         Camera camera = Program.GetMainCamera();
         ImGuiViewport* viewport = ImGui.GetMainViewport();
 
@@ -110,7 +113,11 @@ internal unsafe static class StellariumRenderer {
 
         NavballMarkerRenderer.Draw();
 
+        StarPicker.UpdateOverlay(draw_list.Value, camera, center, radius);
+
         ImGui.End();
+
+        StarPicker.DrawWindows();
     }
 
     private static void DrawStarPointer(ImDrawListPtr drawList, Camera camera, double radius) {
@@ -122,7 +129,7 @@ internal unsafe static class StellariumRenderer {
         // targeted at their actual in-game position rather than the catalog sky direction.
         if(SkyCulturesRenderer.TryGetGameBodyEgo(hip, camera, out double3 bodyEgo)) {
             position = bodyEgo;
-        } else if(SkyCulturesRenderer.IsCentralStar(hip) && !StarParallax.IsCameraOutsideSolarSystem(camera)) {
+        } else if(SkyCulturesRenderer.IsCentralStar(hip) && !GameStarSpace.IsObserverOutsideSolarSystem(camera)) {
             return;
         } else {
             if(!SkyCulturesRenderer.TryGetStarDirection(hip, out double3 direction))

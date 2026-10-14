@@ -1,4 +1,21 @@
-# Star parallax (experimental): developer notes
+# Legacy: OhMyStars experimental star parallax (removed)
+
+> **Status: removed.** KSA v2026.10.13.5602 (revs 5597–5599) added native 3D star rendering:
+> each star record now carries an inverse-parsec distance and the star shader shifts every star by the
+> camera position (`InstancedStarTechnique`, `SpriteInstance.Direction/InverseParsecs`). The mod's own
+> CPU-side parallax was therefore deleted and lines/labels/pointers now follow the game's math
+> (see `src/GameStarSpace.cs`). This page is kept as a record in case the approach is useful again.
+>
+> Archived sources (not compiled):
+> - [`legacy/StarParallax.cs.txt`](legacy/StarParallax.cs.txt) – the runtime implementation (was `src/StarParallax.cs`).
+> - [`legacy/make_parallax_bin.py`](legacy/make_parallax_bin.py) – the bin generator (was `tools/make_parallax_bin.py`).
+> - The generated `src/parallax/ohmystars_parallax_99k.bin` was deleted; it is in git history.
+>
+> Differences vs. the native implementation: the game keeps the original sprite size/colour and scales
+> size by `r^(-5·magnitudeScale)` in the shader (no absolute-magnitude recolouring, no cutoff, stars within
+> ~0.001 of the unit-sphere-scaled distance are hidden), and only the camera position is used.
+
+The text below describes the feature as it was.
 
 With this feature on, the background stars move according to the camera's position. They are no longer fixed on a celestial sphere.
 

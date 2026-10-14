@@ -22,7 +22,8 @@ internal static class OhMyStarsWindow {
     private enum StarSelectionMode {
         Constellation,
         Proper,
-        Bayer
+        Bayer,
+        Picked
     }
 
     private static class Defaults {
@@ -276,6 +277,12 @@ internal static class OhMyStarsWindow {
         DrawTabButton("Information", WindowDisplay.Information);
         ImGui.Separator();
 
+        if(StarsEditWindow.VanillaMode) {
+            ImGui.TextColored(in ConsoleStyle.Pending, "Vanilla mode: a non-OhMyStars star binary is loaded.");
+            ImGui.TextColored(in ConsoleStyle.TextMuted, "OhMyStars features are disabled until only OhMyStars binaries are enabled in Stars Edit.");
+            ImGui.Separator();
+        }
+
         if(_display == WindowDisplay.Information) {
             DrawInformation();
             ConsoleStyle.PopWidgetStyle();
@@ -326,13 +333,6 @@ internal static class OhMyStarsWindow {
         if(ConsoleWidgets.Checkbox("ShowRaDecGrid", ref showRaDecGridTop, pending: false)) {
             StellariumRenderer.showRaDecGrid = showRaDecGridTop;
             SaveSettings();
-        }
-        ConsoleWidgets.EndRow();
-
-        bool parallaxEnabledTop = StarParallax.Enabled;
-        ConsoleWidgets.BeginRow("Star Parallax (Experimental)");
-        if(ConsoleWidgets.Checkbox("ParallaxEnabledTop", ref parallaxEnabledTop, pending: false)) {
-            StarsEditWindow.SetParallaxEnabled(parallaxEnabledTop);
         }
         ConsoleWidgets.EndRow();
 
@@ -723,6 +723,8 @@ internal static class OhMyStarsWindow {
         DrawSelectionModeButton("Proper", StarSelectionMode.Proper);
         ImGui.SameLine();
         DrawSelectionModeButton("Bayer", StarSelectionMode.Bayer);
+        ImGui.SameLine();
+        DrawSelectionModeButton("Cursor", StarSelectionMode.Picked);
         ImGui.Separator();
 
         IReadOnlyList<ConstellationInformation> constellations = SkyCulturesRenderer.GetActiveConstellationInformation();
@@ -750,6 +752,7 @@ internal static class OhMyStarsWindow {
         (StarInformation Star, string DisplayName)? selection = _starSelectionMode switch {
             StarSelectionMode.Proper => DrawProperSelector(),
             StarSelectionMode.Bayer => DrawBayerSelector(),
+            StarSelectionMode.Picked => DrawPickedSelector(),
             _ => DrawConstellationSelector(constellations),
         };
 
@@ -1018,6 +1021,49 @@ internal static class OhMyStarsWindow {
         return (star.Star, star.DisplayName);
     }
 
+    // Cursor selection mode: the star last picked by clicking near it in the 3D view.
+    private static (StarInformation Star, string DisplayName)? DrawPickedSelector() {
+        const string pickerOwner = "SelectStar";
+        StarPicker.KeepAlive(pickerOwner);
+        bool picking = StarPicker.IsActiveFor(pickerOwner);
+        if(picking) {
+            if(ConsoleWidgets.PositiveButton("Pick Star with Cursor", "PickStarCursor", default))
+                StarPicker.Cancel();
+        } else if(ConsoleWidgets.Button("Pick Star with Cursor", "PickStarCursor", default)) {
+            StarPicker.Start(pickerOwner, SetSelectedStarFromPick);
+        }
+        if(picking) {
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "Star Picker On");
+        }
+        if(picking && StarPicker.NoStarNearLastClick)
+            ImGui.TextColored(in ConsoleStyle.TextMuted, "No star near the last click.");
+
+        if(_pickedStarHip <= 0) {
+            ImGui.TextColored(in ConsoleStyle.TextMuted, "No star picked yet.");
+            return null;
+        }
+
+        string name = SkyCulturesRenderer.DescribeStar(_pickedStarHip);
+        if(!SkyCulturesRenderer.TryGetStarInformation(_pickedStarHip, out StarInformation info)) {
+            info = new StarInformation(_pickedStarHip, name, string.Empty, string.Empty, false, string.Empty,
+                string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+        }
+        return (info, name);
+    }
+
+    private static int _pickedStarHip;
+
+    // Called by StarPicker for each star picked with the cursor.
+    public static void SetSelectedStarFromPick(int hip) {
+        _pickedStarHip = hip;
+        _selectedStarHip = hip;
+        _starSelectionMode = StarSelectionMode.Picked;
+        _display = WindowDisplay.Information;
+        _dropdownLabelHip = hip;
+        _dropdownLabelName = SkyCulturesRenderer.DescribeStar(hip);
+    }
+
     private static int FindBayerStarIndex(IReadOnlyList<BayerStarInformation> stars, int hip) {
         for(int index = 0; index < stars.Count; index++) {
             if(stars[index].Star.Hip == hip)
@@ -1240,10 +1286,10 @@ internal static class OhMyStarsWindow {
         // The vessel is what gets rotated (and what the navball shows), so it is the observer.
         Camera? camera = Program.GetMainCamera();
         double3 observerPositionEcl = vehicle.GetPositionEcl();
-        double3 observerPc = observerPositionEcl * (1.0 / StarParallax.MetersPerParsec);
+        double3 observerPc = observerPositionEcl * GameStarSpace.ParsecsPerMeter;
         double observerSunDistanceSq = observerPc.X * observerPc.X + observerPc.Y * observerPc.Y + observerPc.Z * observerPc.Z;
-        double hideRadius = Math.Max(StarParallax.HideRadiusPc, 1e-9);
-        bool observerInSolarSystem = !StarParallax.IsActive || observerSunDistanceSq <= hideRadius * hideRadius;
+        double hideRadius = GameStarSpace.OutsideSolarSystemPc;
+        bool observerInSolarSystem = observerSunDistanceSq <= hideRadius * hideRadius;
 
         if(camera != null && SkyCulturesRenderer.TryGetGameBodyVectorFrom(hip, camera, vehicle, out double3 bodyVector)) {
             // Stars that exist as game bodies (Sol, Alpha Centauri, Barnard's Star, Tau Ceti, ...) are
@@ -1262,8 +1308,8 @@ internal static class OhMyStarsWindow {
 
             starDirEcl = -observerPositionEcl / observerDistance;
         } else {
-            // With experimental parallax active the direction is taken from the vessel position to the
-            // star's 3D catalog position (Sol included once the vessel has left the solar system).
+            // The direction is shifted for the vessel position using the game's 3D star model
+            // (Sol included once the vessel has left the solar system).
             if(!SkyCulturesRenderer.TryGetStarDirectionFrom(hip, observerPc, out double3 rawDir))
                 return;
 
