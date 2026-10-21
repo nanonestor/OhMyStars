@@ -1,0 +1,25 @@
+{
+  "status": "passed_structural_and_source_precedence_checks",
+  "rows": 378699,
+  "athyg_rows_verified": 338817,
+  "base_athyg_rows_verified": 329571,
+  "original_nonempty_athyg_fields_preserved": true,
+  "added_ids_on_athyg_rows": 315,
+  "identifier_additions": 330,
+  "wds_only_rows": 39882,
+  "unknown_position_rows": 23852,
+  "pair_measurements": 52583,
+  "bds_identified_systems": 10029,
+  "roles": {
+    "S": 289931,
+    "P": 36995,
+    "C": 45949,
+    "V": 4685,
+    "Q": 1097,
+    "U": 42
+  },
+  "review_rows": 15,
+  "catalog_sha256": "E051082A3E3522EC829D7788C635C0C422CD8E28167180AB120D5E2780B49FDA",
+  "shared_gaia_ids_allowed": true,
+  "scientific_identity_review_required": true
+}

@@ -13,6 +13,9 @@ internal unsafe static class StellariumRenderer {
 
     public static bool showIAUConstellations = false;
     public static bool showStarNames = false;
+    public static bool filterBySpectral = false;
+    public static int spectralTypeMask = 0xFF;
+    public static float spectralDistanceLightYears = 100f;
     public static bool showAsterisms = true;
     public static bool showAsterismNames = true;
     public static bool showRaDecGrid = false;
@@ -102,8 +105,11 @@ internal unsafe static class StellariumRenderer {
         double3 center = double3.Zero;
         double radius = StarDistance;
 
+        SkyLabelRenderer.Begin(viewport->Pos, viewport->Size);
         SkyMarkingsRenderer.Draw(draw_list.Value, camera, center, radius);
         SkyCulturesRenderer.Draw(draw_list.Value, camera, center, radius, showAsterisms, showAsterismNames, showStarNames);
+        if(filterBySpectral)
+            SkyCulturesRenderer.DrawSpectralTypes(draw_list.Value, camera, center, radius, spectralTypeMask, spectralDistanceLightYears);
         SkyCulturesRenderer.DrawSelectedDropdownStarName(draw_list.Value, camera, center, radius);
 
         if(showIAUConstellations)
@@ -113,7 +119,9 @@ internal unsafe static class StellariumRenderer {
 
         NavballMarkerRenderer.Draw();
 
+        MultipleStarView.DrawOverlay(draw_list.Value, camera, center, radius);
         StarPicker.UpdateOverlay(draw_list.Value, camera, center, radius);
+        SkyLabelRenderer.Draw(draw_list.Value);
 
         ImGui.End();
 

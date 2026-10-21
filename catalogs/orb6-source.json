@@ -1,0 +1,25 @@
+{
+  "catalog": "Sixth Catalog of Orbits of Visual Binary Stars (ORB6)",
+  "maintainers": "Rachel A. Matson, Stephen J. Williams, William I. Hartkopf and Brian D. Mason, U.S. Naval Observatory",
+  "homepage": "https://www.astro.gsu.edu/wds/orb6.html",
+  "catalog_updated_as_reported_by_homepage": "2026-10-13",
+  "retrieved_date_local": "2026-10-19",
+  "sources": [
+    {
+      "file": "orb6orbits.txt",
+      "url": "https://www.astro.gsu.edu/wds/orb6/orb6orbits.txt",
+      "sha256": "AC7DB7711D638F4D8BC47F9A876FB7294F25436D36942D74EB023AA42325824C",
+      "bytes": 1075370,
+      "records": 4051
+    },
+    {
+      "file": "orb6format.txt",
+      "url": "https://www.astro.gsu.edu/wds/orb6/orb6format.txt",
+      "sha256": "5D191C009D92B1E233C08C3EFA8F237098116AD61C60C8234C17133E072E7A90",
+      "bytes": 7301
+    }
+  ],
+  "modifications": "Downloaded files retained verbatim. Runtime reads a conservative subset; no orbital elements are added to oms_catalog.csv.",
+  "license_status": "No explicit standalone redistribution license identified on the inspected catalog/format pages. Confirm redistribution terms before publishing; do not assume AT-HYG's CC BY-SA license covers ORB6.",
+  "citation": "Hartkopf, Mason and Worley (2001), Sixth Catalog of Orbits of Visual Binary Stars; current online catalog maintained by USNO. Individual orbit references are retained in the source's reference-code column."
+}

@@ -105,6 +105,8 @@ internal static class SkyMarkingsRenderer {
 
                 ImDrawListExtensions.AddText(draw_list, prefixScreen, labelColor, label.Prefix);
                 ImDrawListExtensions.AddText(draw_list, numberScreen, labelColor, label.Text);
+                SkyLabelRenderer.Reserve(prefixScreen, prefixSize);
+                SkyLabelRenderer.Reserve(numberScreen, numberSize);
                 continue;
             }
 
@@ -119,6 +121,7 @@ internal static class SkyMarkingsRenderer {
                 continue;
 
             drawnLabelRects.Add(new float4(screen.X, screen.Y, screen.X + size.X, screen.Y + size.Y));
+            SkyLabelRenderer.Reserve(screen, size);
 
             ImDrawListExtensions.AddText(
                 draw_list,

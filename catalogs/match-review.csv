@@ -1,0 +1,16 @@
+wds_id,discoverer,components,source_line,reason
+02257-2119,HJ3500,,12836,identity_first_shared_component_reference_AT40:184371
+04375+1418,HDS597,AB,23617,identity_first_shared_component_reference_AT40:336837
+06005-2753,HDS819,AB,34171,identity_first_shared_component_reference_AT40:476675
+06122-6532,TOK106,BC,35857,identity_first_conflicting_or_shared_identifiers_B
+06467+0822,HDS940,AB,41248,identity_first_shared_component_reference_AT40:591291
+08321-2730,HDS1220,AB,56191,identity_first_shared_component_reference_AT40:888806
+10111-7227,HDS1468,AB,66231,identity_first_shared_component_reference_AT40:1070907
+12059+2628,HDS1707,AB,76707,identity_first_shared_component_reference_AT40:1244982
+13133-0756,HDS1851,AB,82244,identity_first_shared_component_reference_AT40:1332929
+14333-2707,HDS2056,AB,88880,identity_first_shared_component_reference_AT40:1445916
+14494-5726,HDS2092,AB,90073,identity_first_shared_component_reference_AT40:1468853
+16342-5238,HDS2344,AB,99168,identity_first_shared_component_reference_AT40:1632704
+21433-4327,HDS3095,AB,144381,identity_first_shared_component_reference_AT40:2351205
+22538-3559,HDS3255,AB,151866,identity_first_shared_component_reference_AT40:2469267
+23160-8122,HDS3313,"Aa,Ab",153940,identity_first_shared_component_reference_AT40:2500908

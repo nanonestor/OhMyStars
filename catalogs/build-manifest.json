@@ -1,0 +1,140 @@
+{
+  "schema_version": 11,
+  "status": "PROVISIONAL_RUNTIME_DEFAULT",
+  "counts": {
+    "wds_explicit_component_alias_links": 2,
+    "athyg_input_rows": 2558654,
+    "athyg_base_rows": 329571,
+    "wds_input_pairs": 157990,
+    "wds_excluded_flags": 10321,
+    "wds_century_motion_pairs_normalized": 323,
+    "wds_eligible_groups": 37074,
+    "identity_first_component_matches": 26002,
+    "athyg_anchored_companion_searches": 44328,
+    "systems_missing_wdss": 1409,
+    "wds_informational_measurement_notes_accepted": 23,
+    "wds_later_conflicting_assignments_omitted": 24,
+    "wds_groups_without_resolved_pairs": 13,
+    "wds_historical_designations_accepted": 17,
+    "curated_almach_representative_matches": 3,
+    "identity_first_ambiguous_identifiers": 15,
+    "wds_uncertain_existence_groups_excluded": 9,
+    "wds_uncertain_existence_pairs_excluded": 25,
+    "curated_sirius_b_identity_matches": 1,
+    "curated_izar_identity_matches": 2,
+    "wds_unsupported_hierarchy_pairs_excluded": 8,
+    "curated_epsilon_lyrae_identity_matches": 5,
+    "filled_hd": 297,
+    "filled_hip": 2,
+    "wds_id_links_reused_full_athyg_rows": 98,
+    "wds_duplicate_identifier_relationships_omitted": 60,
+    "filled_flam": 18,
+    "filled_bayer": 12,
+    "filled_con": 1,
+    "output_S": 289931,
+    "output_P": 36995,
+    "output_bds_identified_systems": 10029,
+    "output_bu_identified_systems": 1391,
+    "output_C": 45949,
+    "output_faint_athyg_companions": 9246,
+    "output_V": 4685,
+    "output_Q": 1097,
+    "output_U": 42,
+    "output_wds_only_stars": 39882,
+    "orb6_promoted_Q_to_C": 14,
+    "orb6_promoted_V_to_C": 21
+  },
+  "sources": [
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\AT-HYG_40\\athyg_40.csv",
+      "sha256": "8323C361756DC7A81D1096BE0436CD7DDCBFDC528856F48ECFE78ED500B0C00C"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\AT-HYG_40\\LICENSE",
+      "sha256": "F404190403D31E0CE7223F4CB7AF954485AD88077358330754DC5C892A856627"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\AT-HYG_40\\ACKNOWLEDGMENTS.md",
+      "sha256": "595D3F36DEC582247B237448035E8AA4C9C8AB7B022912831338990846E84ABB"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\wds_precise.txt",
+      "sha256": "859A326C297F3948CCBEBF2791950A06665B0A26C9F61FBDE53542076F920BF4"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\wdsnewnotes_main.txt",
+      "sha256": "7D553305769CECD4323BB62F5DEA7E22E3A7C853E59A6D846319A906C54B8E47"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\h.txt",
+      "sha256": "78C1C480EDA72DC66166300B6D70BF4B38F4B3ABA0FBBA7C56E423FC26AC3D2B"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\stf.txt",
+      "sha256": "5A79978E43EB68B6D729D77ECAEBFAD9D3F1356452C1749371D32333486AB64D"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\stt.txt",
+      "sha256": "033A4CDF4294C9824388A645FA7D9FAD987E8A9101DA033EAFDEFCDE6CB4A1D9"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\hds.txt",
+      "sha256": "A5E1A53753D1348F67812CE79D8E2F169248D1FA39253D6CC0D12C6FF0087F87"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\wdserror.txt",
+      "sha256": "9CA796DB9CA57020770B13C455CF109478CE322F07084FE83D58EEE075B382E7"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\wdsweb_format.txt",
+      "sha256": "2A68BCC1FFEA255C446E5D2806CA5F0360D57A37CB505E17FA531028CB6894B4"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\Henry Draper\\catalog.dat",
+      "sha256": "30316584201B67CD4FD4AB488CA9E8A3FF869FD322AEF6E4AA4106A89CE9013F"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\Henry Draper\\ReadMe.txt",
+      "sha256": "B4ED6C028E57F95419398A04DB08F46CF702CE54A3A8D4CBD7396AA481938CDF"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\Henry Draper\\errata.htx",
+      "sha256": "3A9AE4E5263B5C36EC2B76878ACDDA06B8FDC1161B86E1CCA329897CD795904A"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\bf.txt",
+      "sha256": "D7B1E5DB2574303F8D762874A064161A5D2DA9EE608903F2033FCCB66636D7AD"
+    },
+    {
+      "file": "D:\\ksa\\stars\\catalogs\\WDS\\wdsidsadsbds.txt",
+      "sha256": "1A4976475BED42F94779177508E18358F49856B5EE1B98971F2AC9B8BD01C039"
+    },
+    {
+      "file": "D:\\ksa-mods\\OhMyStars\\catalogs\\orb6orbits.txt",
+      "sha256": "AC7DB7711D638F4D8BC47F9A876FB7294F25436D36942D74EB023AA42325824C"
+    }
+  ],
+  "catalog_sha256": "E051082A3E3522EC829D7788C635C0C422CD8E28167180AB120D5E2780B49FDA",
+  "wds_matching": "Identity-first trial: unique component-scoped HIP/HD references before positional fallback; unique DM-to-HD links and simple unblended primary aliases require \u003C=6 arcsec and \u003C=1 mag agreement; matched AT-HYG first endpoints anchor epoch-aware companion searches; positional fallback retains 6 arcsec search, original 2/3 arcsec core and expanded-only \u003C=2 mag guard",
+  "conflicting_system_assignment": "retain first system assignment; omit later conflicting relationship without duplicating star",
+  "wds_new_star_proximity_rejection": false,
+  "wds_pair_separation_limits": false,
+  "curated_sirius_b": "AT40:586689 is individual B of WDS 06451-1643; normalize Ba to B, retain optical Bb independently; retire duplicate WDS Ba identity without recycling its OMS ID",
+  "curated_epsilon_lyrae": "WDS 18443\u002B3940: preserve AT40:1915855 as A and AT40:1915854 as B; AT40:1915959 is Ca, AT40:1915960 is D, CHR77 Cb remains a distinct source-only inner companion; B/Ca/Cb/D are physical C, A remains primary; retire duplicate WDS D without recycling its OMS ID",
+  "curated_izar": "WDS 14450\u002B2704: AT40:1462701 (Izar, HD 129989) is A; AT40:1462698 (HD 129988) is B; override misleading primary-position match and retain original photometry and measurements; retire duplicate WDS B without recycling its OMS ID",
+  "curated_almach": "WDS 02039\u002B4220: AT40:156575 is A; user-approved AT40:156597 / HD 12534 represents B/BC with original blended-source fields preserved; B and C are curated physical companions overriding conflicting WDS A-BC S flag; C remains distinct WDS-only; D unchanged; no inference of resolved B photometry or additional spectroscopic leaves",
+  "missing_wdss": true,
+  "shared_athyg_gaia_ids_allowed": true,
+  "visual_motion_threshold_masyr": 100,
+  "visual_motion_primary_fraction": 1,
+  "visual_motion_comparison": "Q only if companion-minus-primary vector norm is strictly \u003E100 mas/year AND strictly greater than primary vector norm; AT-HYG preferred",
+  "component_policy": "Supported unique ORB6 individual pairs promote Q/V to C through plot-matched geometry or an exact WDS source-pair match to the measurement-owning representative leaf; other subgroup leaves are not inferred; primary P and I-derived U preserved; otherwise Q for motion-only difference \u003E100 mas/year AND \u003E100% of primary motion, or tentative/conflicting optical evidence; V for uncontested explicit optical notes or WDS S/U/Y",
+  "limitations": [
+    "Unrecognized or conflicting hierarchies require review",
+    "Positional associations require scientific review",
+    "No universal exact WDS-Gaia crossmatch supplied",
+    "No structured WDSS file supplied",
+    "Unresolved WDS records remain in match-review.csv",
+    "Default binary generation retains magnitude filtering; catalog associations remain provisional"
+  ]
+}

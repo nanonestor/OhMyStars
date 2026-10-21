@@ -7,6 +7,7 @@ namespace OhMyStars;
 // Records are in exactly the same order as the game file, so record i describes game star i.
 // Layout: "OMSI" magic, int version, int count, then per record:
 //   int hip, int catalogId, float dirX, dirY, dirZ, float invPc, float mag, float absMag, float ci, string name
+// HIP remains an external identifier; catalogId is OMS ID for files generated from the OMS catalog.
 internal static class StarIdentityFile
 {
 	internal const string Extension = ".ohmystars.bin";

@@ -112,13 +112,17 @@ internal static partial class StarsEditWindow
 
 	private static string CuratedRelativePath => BinariesFolderName + "/" + CuratedBinaryName;
 
-	private const string CuratedCatalogName = "athyg_32_reduced_m10.csv";
+	private static string CuratedCatalogPath => ModPaths.Combine("catalogs", "oms_catalog.csv");
 
 	private static string _status = "Waiting for mods to load...";
 
 	private static bool _showWindow = true;
 
 	private static readonly float2 DefaultWindowSize = new float2(900f, 720f);
+	private static float _defaultMagnitudeScale;
+
+	private static float _magnitudeScale;
+
 	private static float _sizeCurveGamma = 1f;
 
 	private static float _sizeLog2Offset = 0f;
@@ -254,6 +258,8 @@ internal static partial class StarsEditWindow
 
 	private sealed class SliderSettings
 	{
+		public float MagnitudeScale { get; init; } = _defaultMagnitudeScale;
+
 		public float SizeCurveGamma { get; init; } = 1f;
 
 		public float SizeLog2Offset { get; init; }
@@ -279,10 +285,10 @@ internal static partial class StarsEditWindow
 		}
 
 		_genPathsInitialized = true;
-		string defaultCsv = ModPaths.Combine("athyg_32_reduced_m10.csv");
+		string defaultCsv = CuratedCatalogPath;
 		if (!File.Exists(defaultCsv))
 		{
-			string altCsv = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games", "Kitten Space Agency", "mods", "OhMyStars", "athyg_32_reduced_m10.csv");
+			string altCsv = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games", "Kitten Space Agency", "mods", "OhMyStars", "catalogs", "oms_catalog.csv");
 			if (File.Exists(altCsv))
 			{
 				defaultCsv = altCsv;
@@ -618,10 +624,10 @@ internal static partial class StarsEditWindow
 			if (_showTooltips && ConsoleWidgets.RowHovered)
 			{
 				ConsoleWidgets.Tooltip(_genAlwaysIncludeByProper
-					? "Entries are matched against the catalog's 'proper' column (e.g. Barnard's Star, Polaris). Case-insensitive. Click to match by AT-HYG id instead."
-					: "Entries are matched against the catalog's AT-HYG 'id' column (e.g. 12345). Click to match by proper name instead.");
+					? "Entries are matched against the catalog's 'proper' column (e.g. Barnard's Star, Polaris). Case-insensitive. Click to match by catalog ID instead."
+					: "Entries match 'oms_id' for OMS catalogs, otherwise the imported catalog's 'id'. Click to match by proper name instead.");
 			}
-			if (ConsoleWidgets.Button(_genAlwaysIncludeByProper ? "Proper Name" : "AT-HYG ID", "GenAlwaysIncludeMode", default))
+			if (ConsoleWidgets.Button(_genAlwaysIncludeByProper ? "Proper Name" : "Catalog ID", "GenAlwaysIncludeMode", default))
 			{
 				_genAlwaysIncludeByProper = !_genAlwaysIncludeByProper;
 			}
@@ -632,7 +638,7 @@ internal static partial class StarsEditWindow
 			{
 				ConsoleWidgets.Tooltip(_genAlwaysIncludeByProper
 					? "Comma-delimited list of proper names, e.g. Polaris, Barnard's Star, Proxima Centauri"
-					: "Comma-delimited list of AT-HYG ids, e.g. 1, 71683, 118254");
+					: "Comma-delimited catalog IDs (OMS IDs for the compiled OMS catalog), e.g. 1, 71683, 118254");
 			}
 			ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
 			ImGui.InputText(new ImString("##GenAlwaysIncludeList"), _genAlwaysIncludeBuffer);
@@ -804,6 +810,8 @@ internal static partial class StarsEditWindow
 	{
 		StarsEditPatcher.Patch();
 		CaptureDefaultStarBinaries();
+		_defaultMagnitudeScale = ReadDefaultMagnitudeScale();
+		_magnitudeScale = _defaultMagnitudeScale;
 		_mod = ResolveOwnMod();
 		EnsureSettingsFileExists();
 		LoadSettingsFromDisk(updateStatus: false);
@@ -887,6 +895,32 @@ internal static partial class StarsEditWindow
 
 		OhMyStarsWindow.DrawThickSeparator();
 		ConsoleWidgets.RegionHeader("Render Tuning");
+
+		float magnitudeScale = _magnitudeScale;
+		ConsoleWidgets.BeginRow("Magnitude Scale");
+		if (_showTooltips && ConsoleWidgets.RowHovered)
+		{
+			ConsoleWidgets.Tooltip("brightness.magnitudeScale: controls how star brightness falls off with distance.\nApplies to all selected binaries without changing their files. Enter a finite value greater than zero.\nRestore Defaults uses the last selected binary's header and keeps your binary selection.\nInitial game binary default: "
+				+ _defaultMagnitudeScale.ToString("G9", CultureInfo.InvariantCulture) + ".");
+		}
+		ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
+		if (ImGui.InputFloat("##EditorMagnitudeScale", ref magnitudeScale, 0f, 0f, "%.6g"))
+		{
+			if (magnitudeScale > 0f && float.IsFinite(magnitudeScale))
+			{
+				_magnitudeScale = magnitudeScale;
+				InstancedStarTechnique? starTechnique = GetStarTechnique();
+				if (starTechnique is not null)
+				{
+					starTechnique.MagnitudeScale = magnitudeScale;
+				}
+			}
+			else
+			{
+				TimedAlert.CreateWarning("Magnitude Scale must be a finite value greater than zero");
+			}
+		}
+		ConsoleWidgets.EndRow();
 
 		// Size Curve Gamma - Lower values boost mid/faint stars more; higher values make size fall off faster with magnitude
 		float sizeCurveGamma = _sizeCurveGamma;
@@ -1005,7 +1039,7 @@ internal static partial class StarsEditWindow
 		ImGui.Dummy(new float2(0f, 4f));
 		if (ConsoleWidgets.Button("Restore Defaults"))
 		{
-			ShowYesNo("Restore Defaults", "Restore all settings and star file(s) to the game's defaults?", RestoreAllDefaults);
+			ShowYesNo("Restore Defaults", "Reset render tuning and restore Magnitude Scale from the last selected star binary? Your selected binaries will not change. With none selected, the game's default Magnitude Scale is used.", RestoreAllDefaults);
 		}
 
 		ImGui.SameLine();
@@ -1130,33 +1164,35 @@ internal static partial class StarsEditWindow
 		}
 	}
 
-	private static void RestoreDefaultBinaries()
+	private static float ReadDefaultMagnitudeScale()
 	{
-		foreach (KeyValuePair<Mod, string[]> kvp in DefaultStarBinaries)
+		Mod? coreMod = ResolveCoreOwnerMod(DefaultStarBinaries.Keys.ToList());
+		if (coreMod is null || !DefaultStarBinaries.TryGetValue(coreMod, out string[]? binaries)
+			|| binaries.Length == 0)
 		{
-			SetStarBinariesForMod(kvp.Key, (string[])kvp.Value.Clone());
+			throw new InvalidOperationException("Cannot find the game's default star binary for Magnitude Scale.");
 		}
 
-		// Mods discovered after the snapshot had no defaults recorded, so they get none.
-		foreach (Mod loadedMod in GetAllLoadedMods())
+		// Match the game's loader: the last stock binary supplies the distance-brightness exponent.
+		return ReadBinaryMagnitudeScale(Path.Combine(coreMod.DirectoryPath, binaries[^1]));
+	}
+
+	private static float ReadBinaryMagnitudeScale(string path)
+	{
+		using BinaryReader reader = new BinaryReader(File.OpenRead(path));
+		if (reader.BaseStream.Length < StarHeaderBytes)
 		{
-			if (!DefaultStarBinaries.ContainsKey(loadedMod))
-			{
-				SetStarBinariesForMod(loadedMod, Array.Empty<string>());
-			}
+			throw new InvalidDataException($"Star binary '{path}' has an incomplete header.");
 		}
 
-		RebuildEntriesFromMods();
+		reader.ReadInt32();
+		float magnitudeScale = reader.ReadSingle();
+		if (magnitudeScale <= 0f || !float.IsFinite(magnitudeScale))
+		{
+			throw new InvalidDataException($"Star binary '{path}' has an invalid Magnitude Scale.");
+		}
 
-		if (_mod is not null && GetStarTechnique() is not null)
-		{
-			ApplySelection();
-			_status = "Restored game default star binaries. " + _status;
-		}
-		else
-		{
-			_status = "Restored game default star binaries.";
-		}
+		return magnitudeScale;
 	}
 
 	private static Mod? ResolveOwnMod()
@@ -1429,6 +1465,7 @@ internal static partial class StarsEditWindow
 			selectedTotal += selected.Length;
 		}
 
+		starTechnique.MagnitudeScale = _magnitudeScale;
 		GameStarSpace.ResetLoaded(starTechnique);
 		foreach (IViewport viewport in ViewportRegistry.Views)
 		{
@@ -1647,12 +1684,7 @@ internal static partial class StarsEditWindow
 		}
 
 		int declaredTotal = reader.ReadInt32();
-		float magnitudeScale = reader.ReadSingle();
-		if (magnitudeScale > 0f && float.IsFinite(magnitudeScale))
-		{
-			// Same rule as the game's loader: distance brightness follows the last binary loaded.
-			starTechnique.MagnitudeScale = magnitudeScale;
-		}
+		reader.ReadSingle(); // The editor controls magnitude scale instead of individual binary headers.
 
 		long maxByLength = (reader.BaseStream.Length - StarHeaderBytes) / StarRecordBytes;
 		int total = (int)Math.Min(Math.Max(declaredTotal, 0), Math.Max(maxByLength, 0));
@@ -1696,6 +1728,7 @@ internal static partial class StarsEditWindow
 
 		return picked;
 	}
+
 	private static int GetMaxInstances(InstancedStarTechnique starTechnique)
 	{
 		_maxInstancesField ??= typeof(InstancedRenderTechnique<SpriteInstance>).GetField("_maxInstances", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -1820,7 +1853,7 @@ internal static partial class StarsEditWindow
 	}
 
 	// Bump when the curated generation settings change so existing curated files are rebuilt.
-	private const string CuratedBinaryVersion = "3";
+	private const string CuratedBinaryVersion = "8-almach-anchor-fix";
 
 	// Generates the bundled curated binary (plus its identity sister file) in the mod's binaries folder if missing or outdated.
 	private static void EnsureCuratedBinaryExists()
@@ -1846,7 +1879,7 @@ internal static partial class StarsEditWindow
 			return;
 		}
 
-		string csvPath = ModPaths.Combine(CuratedCatalogName);
+		string csvPath = CuratedCatalogPath;
 		if (!File.Exists(csvPath))
 		{
 			return;
@@ -1854,8 +1887,7 @@ internal static partial class StarsEditWindow
 
 		try
 		{
-			// The mod's curated set: the original ~99k stars (apparent magnitude <= 8.795) with the mod's own
-			// flux-based sizing and linear B-V colours, plus Sol.
+			// Keep the existing magnitude/colour policy while sourcing stars from the OMS catalog.
 			GeneratorOptions curatedOptions = new()
 			{
 				UseMaxApparentMagnitude = true,
@@ -1913,6 +1945,7 @@ internal static partial class StarsEditWindow
 
 	private static void ApplySliderSettings(SliderSettings settings)
 	{
+		_magnitudeScale = settings.MagnitudeScale;
 		_sizeCurveGamma = settings.SizeCurveGamma;
 		_sizeLog2Offset = settings.SizeLog2Offset;
 		_renderDataAdditiveOffset = settings.RenderDataAdditiveOffset;
@@ -1927,6 +1960,7 @@ internal static partial class StarsEditWindow
 	{
 		return new SliderSettings
 		{
+			MagnitudeScale = _magnitudeScale,
 			SizeCurveGamma = _sizeCurveGamma,
 			SizeLog2Offset = _sizeLog2Offset,
 			RenderDataAdditiveOffset = _renderDataAdditiveOffset,
@@ -2026,9 +2060,26 @@ internal static partial class StarsEditWindow
 
 	private static void RestoreAllDefaults()
 	{
-		ApplySliderSettings(new SliderSettings());
-		RestoreDefaultBinaries();
-		_status = "Restored default settings and star binaries. " + _status;
+		BinaryEntry? lastSelected = Entries.LastOrDefault(static entry => entry.Enabled);
+		float magnitudeScale;
+		try
+		{
+			magnitudeScale = lastSelected is null ? _defaultMagnitudeScale : ReadBinaryMagnitudeScale(lastSelected.FullPath);
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			_status = $"Cannot restore render defaults: {ex.Message}";
+			TimedAlert.CreateWarning(_status);
+			return;
+		}
+
+		ApplySliderSettings(new SliderSettings { MagnitudeScale = magnitudeScale });
+		if (CanApply() && !ApplySelection())
+		{
+			return;
+		}
+
+		_status = "Restored default render settings; selected star binaries unchanged.";
 	}
 
 	private static void RestoreLastUsedSettings()
@@ -2275,6 +2326,7 @@ internal static partial class StarsEditWindow
 		SliderSettings defaults = new SliderSettings();
 		return new SliderSettings
 		{
+			MagnitudeScale = ReadMagnitudeScale(values, defaults.MagnitudeScale),
 			SizeCurveGamma = ReadFloat(values, nameof(SliderSettings.SizeCurveGamma), defaults.SizeCurveGamma),
 			SizeLog2Offset = ReadFloat(values, nameof(SliderSettings.SizeLog2Offset), defaults.SizeLog2Offset),
 			RenderDataAdditiveOffset = ReadInt(values, nameof(SliderSettings.RenderDataAdditiveOffset), defaults.RenderDataAdditiveOffset),
@@ -2315,6 +2367,7 @@ internal static partial class StarsEditWindow
 
 	private static void AppendSliderLines(List<string> lines, SliderSettings settings)
 	{
+		lines.Add($"{nameof(SliderSettings.MagnitudeScale)}={settings.MagnitudeScale.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.SizeCurveGamma)}={settings.SizeCurveGamma.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.SizeLog2Offset)}={settings.SizeLog2Offset.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.RenderDataAdditiveOffset)}={settings.RenderDataAdditiveOffset.ToString(CultureInfo.InvariantCulture)}");
@@ -2323,6 +2376,23 @@ internal static partial class StarsEditWindow
 		lines.Add($"{nameof(SliderSettings.RedMultiplier)}={settings.RedMultiplier.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.GreenMultiplier)}={settings.GreenMultiplier.ToString(CultureInfo.InvariantCulture)}");
 		lines.Add($"{nameof(SliderSettings.BlueMultiplier)}={settings.BlueMultiplier.ToString(CultureInfo.InvariantCulture)}");
+	}
+
+	private static float ReadMagnitudeScale(Dictionary<string, string> values, float defaultValue)
+	{
+		if (!values.TryGetValue(nameof(SliderSettings.MagnitudeScale), out string? rawValue))
+		{
+			return defaultValue;
+		}
+
+		if (float.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed)
+			&& parsed > 0f && float.IsFinite(parsed))
+		{
+			return parsed;
+		}
+
+		TimedAlert.CreateWarning("Invalid saved Magnitude Scale; using the game binary default");
+		return defaultValue;
 	}
 
 	private static float ReadFloat(Dictionary<string, string> values, string key, float defaultValue)

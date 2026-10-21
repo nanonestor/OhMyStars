@@ -4,7 +4,7 @@ namespace OhMyStars;
 
 /// <summary>
 /// Resolves the directory this mod is actually installed/loaded from, so asset files
-/// (skycultures/, lines_in_20.txt, athyg_32_reduced_m10.csv, settings.ini) are found
+/// (skycultures/, lines_in_20.txt, catalogs/oms_catalog.csv, settings.ini) are found
 /// whether the game loads the mod from the Documents mods folder or an external
 /// modloader loads it from an instance-specific folder.
 /// </summary>

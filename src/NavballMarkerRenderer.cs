@@ -124,8 +124,11 @@ internal static class NavballMarkerRenderer {
             return;
 
         DrawStarGlyph(drawList, markerCenter, glyphSize, fade);
-        if(showMarkerLabel && SkyCulturesRenderer.TryGetStarDisplayName(hip, out string displayName)) {
-            DrawMarkerLabel(drawList, markerCenter, glyphSize, fade, displayName);
+        if(showMarkerLabel) {
+            if(OmsCatalog.Value.Stars.TryGetValue(hip, out var markerStar))
+                DrawMarkerLabel(drawList, markerCenter, glyphSize, fade, StarDesignations.NavballName(markerStar));
+            else if(SkyCulturesRenderer.TryGetStarDisplayName(hip, out string displayName))
+                DrawMarkerLabel(drawList, markerCenter, glyphSize, fade, displayName);
         }
         DrawCenterIndicatorOverMarker(drawList, markerCenter, glyphSize, ballCenter, ballExtends);
     }

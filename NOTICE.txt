@@ -22,9 +22,10 @@ See LICENSES/GPL-2.0.txt for the full license text.
 
 Copyright © the respective Stellarium contributors.
 
-2. athyg_32_reduced_m10.csv
+2. catalogs/oms_catalog.csv
 
-The file athyg_32_reduced_m10.csv is from the HYG Star Database (David Nash)
+The compiled OMS catalog is a modified and supplemented AT-HYG 4.0 catalog
+from the HYG Star Database (David Nash).
 URL: https://astronexus.com/projects/at-hyg
 
 This file is licensed under CC BY-SA 4.0.
@@ -33,7 +34,15 @@ See LICENSES/CC_BY-SA_4.0.txt for the full license text.
 
 Copyright © David Nash.
 
-The file hyg_v42.csv is distributed without modification.
+Original nonempty AT-HYG fields are preserved; additional identifiers and
+individual-star candidates use the Washington Double Star Catalog maintained
+at the U.S. Naval Observatory. Supported ORB6 matches supply additional
+component classifications. Sources, hashes, attribution and limitations are
+documented in catalogs/attributions.md and catalogs/oms_catalog_readme.md.
+Input hashes and construction details remain in the source repository's
+catalogs/build-manifest.json and catalogs/README.md.
+The older reduced AT-HYG 3.2 CSV remains historical repository material but
+is not included in the mod build.
 
 3. lines_in_20.txt
 
@@ -47,3 +56,24 @@ https://creativecommons.org/licenses/by-sa/4.0/
 Copyright © Pierre Barbier.
 
 The file lines_in_20.txt is distributed without modification.
+
+4. catalogs/orb6orbits.txt and catalogs/orb6format.txt
+
+Sixth Catalog of Orbits of Visual Binary Stars (ORB6).
+Rachel A. Matson, Stephen J. Williams, William I. Hartkopf and Brian D. Mason,
+U.S. Naval Observatory.
+URL: https://www.astro.gsu.edu/wds/orb6.html
+Citation: Hartkopf, Mason and Worley (2001), Sixth Catalog of Orbits of
+Visual Binary Stars, and the individual orbit references in the catalog.
+
+This research has made use of the Washington Double Star Catalog maintained
+at the U.S. Naval Observatory.
+
+The downloaded orbital-elements and format files are retained unmodified.
+Oh My Stars derives apparent relative orbit curves from supported records.
+Snapshot URLs, retrieval date and hashes are in catalogs/orb6-source.json;
+interpretation and limitations are documented in catalogs/oms_catalog_readme.md
+and the supplied catalogs/orb6format.txt.
+No standalone redistribution license was identified on the inspected source
+pages. Confirm applicable terms before public distribution; the mod and
+AT-HYG licenses do not relicense these third-party data.

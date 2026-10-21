@@ -14,20 +14,25 @@ internal static class OhMyStarsWindow {
     private enum WindowDisplay {
         Settings,
         Information,
-        SpectrumLegend
+        SpectrumLegend,
+        Multi,
+        MultiHelp
     }
 
-    // The Information tab's three star-browsing modes: pick a constellation then one of its stars,
-    // browse every catalog star with a proper name, or browse every catalog star with a Bayer designation.
+    // Keep Information's persisted enum value while displaying the tab as Stars.
     private enum StarSelectionMode {
         Constellation,
         Proper,
         Bayer,
-        Picked
+        All,
+        Catalog
     }
 
     private static class Defaults {
         public const bool ShowStarNames = false;
+        public const bool FilterBySpectral = false;
+        public const int SpectralTypeMask = 0xFF;
+        public const float SpectralDistanceLightYears = 100f;
         public const bool ShowIAUConstellations = false;
         public const bool ShowAsterisms = true;
         public const bool ShowAsterismNames = true;
@@ -53,13 +58,14 @@ internal static class OhMyStarsWindow {
     private static bool _showWindow = true;
 
     private static bool _skyCultureExpanded = false;
+    private static bool _spectralFilterExpanded = false;
     private static bool _asterismsExpanded = false;
     private static bool _iauConstellationsExpanded = false;
     private static bool _raDecGridExpanded = false;
     private static bool _starPointerExpanded = false;
     private static bool _alignmentExpanded = false;
     private static WindowDisplay _display = WindowDisplay.Settings;
-    private static StarSelectionMode _starSelectionMode = StarSelectionMode.Constellation;
+    private static StarSelectionMode _starSelectionMode = StarSelectionMode.All;
     private static string? _selectedConstellationId;
 
     // The star currently picked from the Proper/Bayer dropdowns, so its name can be drawn on the
@@ -70,7 +76,34 @@ internal static class OhMyStarsWindow {
     // Text filters for the Proper/Bayer "Star" combo boxes - an empty filter shows every result.
     private static readonly ImInputString _properSearchBuffer = new ImInputString(256);
     private static readonly ImInputString _bayerSearchBuffer = new ImInputString(256);
-    private static int _selectedStarHip;
+    private static readonly ImInputString _catalogSearchBuffer = new(256);
+    private static readonly ImInputString _constellationSearchBuffer = new(256);
+    private static readonly ImInputString _constellationStarSearchBuffer = new(256);
+    private static string _identifierColumn = "oms_id";
+    private static string? _cachedIdentifierColumn;
+    private static string? _cachedIdentifierQuery;
+    private static (long Id, string Label)[] _catalogSearchResults = [];
+    private static Task<(long Id, string Label)[]>? _catalogSearchTask;
+    private static CancellationTokenSource? _catalogSearchCancellation;
+    private static long _catalogSearchChangedAt;
+    private static string? _catalogSearchError;
+    private static bool _showStarIdentifiers;
+    private static float _identifierLabelWidth;
+    private static float _identifierFontSize;
+    private static ImFontPtr _identifierFont;
+    public static long? SelectedOmsId { get; private set; }
+    private static int _selectedStarHip {
+        get => checked((int)(SelectedOmsId ?? 0));
+        set => SelectedOmsId = value > 0 ? value : null;
+    }
+    private static bool _disableMouseClicking;
+    public static bool MousePointerEnabled => !_disableMouseClicking;
+    private const string MousePickerOwner = "StarsMouse";
+    public static void SetSelectedOmsStar(long id) {
+        SelectedOmsId = id;
+        _dropdownLabelHip = 0;
+        _dropdownLabelName = string.Empty;
+    }
     private static bool _showStarPointer;
     private static float2 _windowPosition;
     private static float2 _windowSize;
@@ -114,8 +147,19 @@ internal static class OhMyStarsWindow {
 
     private static readonly float2 DefaultWindowSize = new float2(860f, 1000f);
 
+    public static void OpenWindow() {
+        _showWindow = true;
+    }
+
     public static void ToggleWindow() {
         _showWindow = !_showWindow;
+        if(!_showWindow)
+            SuspendMousePicker();
+    }
+
+    private static void SuspendMousePicker() {
+        if(StarPicker.IsActiveFor(MousePickerOwner) || MultipleStarView.IsMousePickerActive)
+            StarPicker.Cancel();
     }
 
     // Open/closed state last written to settings.ini; ImGui's imgui.ini only keeps position/size, not visibility.
@@ -146,8 +190,29 @@ internal static class OhMyStarsWindow {
         StarsEditWindow.IsOpen = ReadBool(values, "ShowStarEditor", true);
         _savedShowWindow = _showWindow;
         _savedShowStarEditor = StarsEditWindow.IsOpen;
+        MultipleStarView.ShowPrimaryRings = ReadBool(values, "ShowMultiplePrimaryRings", false);
+        MultipleStarView.LimitRingsToCenter = ReadBool(values, "MultipleLimitRingsToCenter", false);
+        float ringRadiusPercent = ReadFloat(values, "MultipleRingRadiusPercent", MultipleStarView.DefaultRingRadiusPercent);
+        MultipleStarView.RingRadiusPercent = float.IsFinite(ringRadiusPercent)
+            ? Math.Clamp(ringRadiusPercent, 0f, 50f) : MultipleStarView.DefaultRingRadiusPercent;
+        MultipleStarView.ExcludeWdsOnly = ReadBool(values, "MultipleExcludeWdsOnly", false);
+        MultipleStarView.ExcludeVisual = ReadBool(values, "MultipleExcludeVisual", false);
+        float multipleMagnitudeCutoff = ReadFloat(values, "MultipleMagnitudeCutoff", (float)MultipleStarView.DefaultMagnitudeCutoff);
+        MultipleStarView.MagnitudeCutoff = float.IsFinite(multipleMagnitudeCutoff)
+            ? Math.Round(Math.Clamp(multipleMagnitudeCutoff, MultipleStarView.MinMagnitudeCutoff, MultipleStarView.MaxMagnitudeCutoff), 2)
+            : MultipleStarView.DefaultMagnitudeCutoff;
+        float componentMagnitudeCutoff = ReadFloat(values, "MultipleComponentMagnitudeCutoff", (float)MultipleStarView.DefaultComponentMagnitudeCutoff);
+        MultipleStarView.ComponentMagnitudeCutoff = float.IsFinite(componentMagnitudeCutoff)
+            ? Math.Round(Math.Clamp(componentMagnitudeCutoff, MultipleStarView.MinMagnitudeCutoff, MultipleStarView.MaxMagnitudeCutoff), 2)
+            : MultipleStarView.DefaultComponentMagnitudeCutoff;
 
         StellariumRenderer.showStarNames = ReadBool(values, "ShowStarNames", Defaults.ShowStarNames);
+        StellariumRenderer.filterBySpectral = ReadBool(values, "FilterBySpectral", Defaults.FilterBySpectral);
+        StellariumRenderer.spectralTypeMask = ReadInt(values, "SpectralTypeMask", Defaults.SpectralTypeMask) & 0xFF;
+        float spectralDistance = ReadFloat(values, "SpectralDistanceLightYears", Defaults.SpectralDistanceLightYears);
+        StellariumRenderer.spectralDistanceLightYears = float.IsFinite(spectralDistance)
+            ? Math.Clamp(spectralDistance, 0f, 1_000_000f)
+            : Defaults.SpectralDistanceLightYears;
         StellariumRenderer.showIAUConstellations = ReadBool(values, "ShowIAUConstellations", Defaults.ShowIAUConstellations);
         StellariumRenderer.showAsterisms = ReadBool(values, "ShowAsterisms", Defaults.ShowAsterisms);
         StellariumRenderer.showAsterismNames = ReadBool(values, "ShowAsterismNames", Defaults.ShowAsterismNames);
@@ -197,6 +262,16 @@ internal static class OhMyStarsWindow {
             $"ShowStarEditor={StarsEditWindow.IsOpen.ToString(CultureInfo.InvariantCulture)}",
             $"Tab={GetPersistableTab()}",
             $"ShowStarNames={StellariumRenderer.showStarNames.ToString(CultureInfo.InvariantCulture)}",
+            $"ShowMultiplePrimaryRings={MultipleStarView.ShowPrimaryRings.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleLimitRingsToCenter={MultipleStarView.LimitRingsToCenter.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleRingRadiusPercent={MultipleStarView.RingRadiusPercent.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleMagnitudeCutoff={MultipleStarView.MagnitudeCutoff.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleComponentMagnitudeCutoff={MultipleStarView.ComponentMagnitudeCutoff.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleExcludeWdsOnly={MultipleStarView.ExcludeWdsOnly.ToString(CultureInfo.InvariantCulture)}",
+            $"MultipleExcludeVisual={MultipleStarView.ExcludeVisual.ToString(CultureInfo.InvariantCulture)}",
+            $"FilterBySpectral={StellariumRenderer.filterBySpectral.ToString(CultureInfo.InvariantCulture)}",
+            $"SpectralTypeMask={StellariumRenderer.spectralTypeMask.ToString(CultureInfo.InvariantCulture)}",
+            $"SpectralDistanceLightYears={StellariumRenderer.spectralDistanceLightYears.ToString(CultureInfo.InvariantCulture)}",
             $"ShowIAUConstellations={StellariumRenderer.showIAUConstellations.ToString(CultureInfo.InvariantCulture)}",
             $"ShowAsterisms={StellariumRenderer.showAsterisms.ToString(CultureInfo.InvariantCulture)}",
             $"ShowAsterismNames={StellariumRenderer.showAsterismNames.ToString(CultureInfo.InvariantCulture)}",
@@ -230,7 +305,17 @@ internal static class OhMyStarsWindow {
     }
 
     private static void ResetToDefaults() {
+        MultipleStarView.ShowPrimaryRings = false;
+        MultipleStarView.LimitRingsToCenter = false;
+        MultipleStarView.RingRadiusPercent = MultipleStarView.DefaultRingRadiusPercent;
+        MultipleStarView.MagnitudeCutoff = MultipleStarView.DefaultMagnitudeCutoff;
+        MultipleStarView.ComponentMagnitudeCutoff = MultipleStarView.DefaultComponentMagnitudeCutoff;
+        MultipleStarView.ExcludeWdsOnly = false;
+        MultipleStarView.ExcludeVisual = false;
         StellariumRenderer.showIAUConstellations = Defaults.ShowIAUConstellations;
+        StellariumRenderer.filterBySpectral = Defaults.FilterBySpectral;
+        StellariumRenderer.spectralTypeMask = Defaults.SpectralTypeMask;
+        StellariumRenderer.spectralDistanceLightYears = Defaults.SpectralDistanceLightYears;
         StellariumRenderer.showAsterisms = Defaults.ShowAsterisms;
         StellariumRenderer.showAsterismNames = Defaults.ShowAsterismNames;
         NavballMarkerRenderer.showNavballMarker = Defaults.ShowNavballMarker;
@@ -255,14 +340,19 @@ internal static class OhMyStarsWindow {
     }
 
     public static void Draw() {
-        if(!_showWindow)
+        MultipleStarView.TabVisible = false;
+        if(!_showWindow) {
+            SuspendMousePicker();
             return;
+        }
 
         // ConsoleStyle.BeginWindow forces NoSavedSettings, so a plain ImGui window is used instead to stay
         // resizable/movable/scrollable and to persist position+size in imgui.ini; ConsoleStyle only supplies widget colors.
         ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowBgAlpha(1f);
-        if(!ImGui.Begin("Oh My Stars", ref _showWindow, ImGuiWindowFlags.None)) {
+        bool expanded = ImGui.Begin("Oh My Stars", ref _showWindow, ImGuiWindowFlags.None);
+        if(!expanded || !_showWindow) {
+            SuspendMousePicker();
             ImGui.End();
             return;
         }
@@ -274,7 +364,32 @@ internal static class OhMyStarsWindow {
 
         DrawTabButton("Settings", WindowDisplay.Settings);
         ImGui.SameLine();
-        DrawTabButton("Information", WindowDisplay.Information);
+        DrawTabButton("Stars", WindowDisplay.Information);
+        ImGui.SameLine();
+        DrawTabButton("Multi", WindowDisplay.Multi);
+        if(_display is not (WindowDisplay.Information or WindowDisplay.Multi) || StarsEditWindow.VanillaMode)
+            SuspendMousePicker();
+        if(_display is WindowDisplay.Information or WindowDisplay.Multi) {
+            const string pointerLabel = "Disable Mouse Clicking";
+            float dotSize = ImGui.GetFrameHeight();
+            float controlsWidth = ImGui.CalcTextSize(pointerLabel).X + ImGui.GetStyle().FramePadding.X * 2 +
+                (_disableMouseClicking ? dotSize + ImGui.GetStyle().ItemSpacing.X : 0);
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(),
+                ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - controlsWidth));
+            if(_disableMouseClicking) {
+                float2 dotCenter = ImGui.GetCursorScreenPos() + new float2(dotSize * 0.5f);
+                ImDrawListExtensions.AddCircleFilled(ImGui.GetWindowDrawList(), dotCenter, dotSize * 0.15f,
+                    new ImColor8(0, 255, 140, 255), 0);
+                ImGui.Dummy(new float2(dotSize));
+                ImGui.SameLine();
+            }
+            if(ImGui.Button(pointerLabel)) {
+                _disableMouseClicking = !_disableMouseClicking;
+                if(!MousePointerEnabled)
+                    SuspendMousePicker();
+            }
+        }
         ImGui.Separator();
 
         if(StarsEditWindow.VanillaMode) {
@@ -283,6 +398,19 @@ internal static class OhMyStarsWindow {
             ImGui.Separator();
         }
 
+        if(_display == WindowDisplay.MultiHelp) {
+            MultipleStarView.DrawHelp();
+            ConsoleStyle.PopWidgetStyle();
+            ImGui.End();
+            return;
+        }
+        if(_display == WindowDisplay.Multi) {
+            MultipleStarView.TabVisible = true;
+            MultipleStarView.Draw();
+            ConsoleStyle.PopWidgetStyle();
+            ImGui.End();
+            return;
+        }
         if(_display == WindowDisplay.Information) {
             DrawInformation();
             ConsoleStyle.PopWidgetStyle();
@@ -335,6 +463,55 @@ internal static class OhMyStarsWindow {
             SaveSettings();
         }
         ConsoleWidgets.EndRow();
+
+        DrawThickSeparator();
+        DrawSectionHeader("Spectral Filter", "Shows spectral types beside matching stars in the sky. Select one or more spectral classes and a maximum catalog distance from the solar-system origin.", ref _spectralFilterExpanded);
+        if(_spectralFilterExpanded) {
+            ImGui.Separator();
+            BeginEntryIndent();
+
+            bool filterBySpectral = StellariumRenderer.filterBySpectral;
+            ConsoleWidgets.BeginRow("Filter by Spectral");
+            if(ConsoleWidgets.Checkbox("FilterBySpectral", ref filterBySpectral, pending: false)) {
+                StellariumRenderer.filterBySpectral = filterBySpectral;
+                SaveSettings();
+            }
+            ConsoleWidgets.EndRow();
+
+            int spectralMask = StellariumRenderer.spectralTypeMask;
+            bool spectralTypesChanged = false;
+            DrawSpectralTypeCheckbox("O", 1 << 0, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("B", 1 << 1, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("A", 1 << 2, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("F", 1 << 3, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("G", 1 << 4, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("K", 1 << 5, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("M", 1 << 6, ref spectralMask, ref spectralTypesChanged);
+            ImGui.SameLine();
+            DrawSpectralTypeCheckbox("Other", 1 << 7, ref spectralMask, ref spectralTypesChanged);
+            if(spectralTypesChanged) {
+                StellariumRenderer.spectralTypeMask = spectralMask;
+                SaveSettings();
+            }
+
+            float spectralDistance = StellariumRenderer.spectralDistanceLightYears;
+            ImGui.Text("Maximum Distance (light-years)");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(120f);
+            if(ImGui.InputFloat("##SpectralDistanceLightYears", ref spectralDistance, 0f, 0f, "%.1f", ImGuiInputTextFlags.CharsDecimal)) {
+                StellariumRenderer.spectralDistanceLightYears = float.IsFinite(spectralDistance)
+                    ? Math.Clamp(spectralDistance, 0f, 1_000_000f)
+                    : Defaults.SpectralDistanceLightYears;
+                SaveSettings();
+            }
+            EndEntryIndent();
+        }
 
         ImGui.NewLine();
         DrawThickSeparator();
@@ -569,6 +746,14 @@ internal static class OhMyStarsWindow {
         }
     }
 
+    private static void DrawSpectralTypeCheckbox(string label, int bit, ref int mask, ref bool changed) {
+        bool selected = (mask & bit) != 0;
+        if(ImGui.Checkbox(label, ref selected)) {
+            mask = selected ? mask | bit : mask & ~bit;
+            changed = true;
+        }
+    }
+
     // A standalone "(?)" hover tooltip placed after a preceding widget via SameLine, for widgets
     // (like combo boxes) that don't have their own label+help row helper.
     private static void DrawHelpMarker(string helpText) {
@@ -669,19 +854,6 @@ internal static class OhMyStarsWindow {
         }
     }
 
-    // Same layout as DrawTabButton but toggles the Information tab's star selection mode instead
-    // of the top-level window tab, and isn't persisted to settings.
-    private static void DrawSelectionModeButton(string label, StarSelectionMode mode) {
-        bool selected = _starSelectionMode == mode;
-        bool clicked = selected
-            ? DrawColoredTabButton(label)
-            : ConsoleWidgets.Button(label, label, default);
-
-        if(clicked && !selected) {
-            _starSelectionMode = mode;
-        }
-    }
-
     // Same layout/rounding/padding as ConsoleWidgets' filled buttons (see PrimaryButton in
     // ConsoleWidgets.DrawButtonCore), but filled with the window title bar color and white text.
     internal static bool DrawColoredTabButton(string label) {
@@ -717,14 +889,43 @@ internal static class OhMyStarsWindow {
         return clicked;
     }
 
+    internal static void KeepStarMousePicker() {
+        if(MousePointerEnabled && !StarsEditWindow.VanillaMode &&
+            (!StarPicker.Active || StarPicker.IsActiveFor(MousePickerOwner) || MultipleStarView.IsMousePickerActive)) {
+            if(!StarPicker.IsActiveFor(MousePickerOwner))
+                StarPicker.Start(MousePickerOwner, SetSelectedStarFromPick,
+                    id => OmsCatalog.Value.Stars.TryGetValue(id, out var entry) && !entry.IsSystemCompanion);
+            StarPicker.KeepAlive(MousePickerOwner);
+        }
+    }
+
     private static void DrawInformation() {
-        DrawSelectionModeButton("Constellations", StarSelectionMode.Constellation);
+        KeepStarMousePicker();
+        float searchByWidth = ImGui.CalcItemWidth() * 0.5f;
+        float searchByRowWidth = ImGui.CalcTextSize("Search By:").X + ImGui.GetStyle().ItemSpacing.X + searchByWidth;
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + Math.Max(0, (ImGui.GetContentRegionAvail().X - searchByRowWidth) * 0.5f));
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Search By:");
         ImGui.SameLine();
-        DrawSelectionModeButton("Proper", StarSelectionMode.Proper);
-        ImGui.SameLine();
-        DrawSelectionModeButton("Bayer", StarSelectionMode.Bayer);
-        ImGui.SameLine();
-        DrawSelectionModeButton("Cursor", StarSelectionMode.Picked);
+        ImGui.SetNextItemWidth(searchByWidth);
+        string modeName = _starSelectionMode == StarSelectionMode.Constellation ? "Constellations" :
+            _starSelectionMode == StarSelectionMode.Catalog
+                ? CatalogIdentifiers.Catalogs.Single(c => c.Column == _identifierColumn).Name : _starSelectionMode.ToString();
+        if(ImGui.BeginCombo("##StarSearchBy", modeName)) {
+            foreach(var (label, mode) in new[] {
+                ("All", StarSelectionMode.All),
+                ("Constellations", StarSelectionMode.Constellation), ("Proper", StarSelectionMode.Proper),
+                ("Bayer", StarSelectionMode.Bayer)
+            })
+                if(ImGui.Selectable(label, _starSelectionMode == mode))
+                    _starSelectionMode = mode;
+            foreach(var (name, column) in CatalogIdentifiers.Catalogs)
+                if(ImGui.Selectable(name, _starSelectionMode == StarSelectionMode.Catalog && _identifierColumn == column)) {
+                    _identifierColumn = column;
+                    _starSelectionMode = StarSelectionMode.Catalog;
+                }
+            ImGui.EndCombo();
+        }
         ImGui.Separator();
 
         IReadOnlyList<ConstellationInformation> constellations = SkyCulturesRenderer.GetActiveConstellationInformation();
@@ -752,18 +953,24 @@ internal static class OhMyStarsWindow {
         (StarInformation Star, string DisplayName)? selection = _starSelectionMode switch {
             StarSelectionMode.Proper => DrawProperSelector(),
             StarSelectionMode.Bayer => DrawBayerSelector(),
-            StarSelectionMode.Picked => DrawPickedSelector(),
+            StarSelectionMode.All => DrawCatalogSelector(),
+            StarSelectionMode.Catalog => DrawCatalogSelector(),
             _ => DrawConstellationSelector(constellations),
         };
+        if(SkyCulturesRenderer.TryGetStarInformation(_selectedStarHip, out var selectedInfo))
+            selection = (selectedInfo, selectedInfo.DisplayName);
+        else if(SelectedOmsId.HasValue)
+            selection = null;
 
         if(selection == null) {
             _dropdownLabelHip = 0;
             _dropdownLabelName = string.Empty;
+            ImGui.TextColored(in ConsoleStyle.TextMuted, "No star selected for Stars. Select a star above or with the cursor.");
             return;
         }
 
         StarInformation star = selection.Value.Star;
-        string starDisplayName = selection.Value.DisplayName;
+        string starDisplayName = StarDisplayName(star);
         _selectedStarHip = star.Hip;
 
         if(_starSelectionMode == StarSelectionMode.Constellation) {
@@ -790,16 +997,28 @@ internal static class OhMyStarsWindow {
 
         ImGui.NewLine();
         ImGui.Separator();
-        DrawRegionHeaderLarge(starDisplayName, 1.5f);
+        if(OmsCatalog.Value.Stars.TryGetValue(star.Hip, out var headingStar)) {
+            string heading = StarDesignations.PrimaryHeading(headingStar, SupportsStruveSymbols);
+            string bayer = StarDesignations.Bayer(headingStar["bayer"], headingStar["con"]);
+            if(heading.Length > 0)
+                DrawRegionHeaderLarge(heading, 1.5f);
+            if(bayer.Length > 0)
+                DrawRegionHeaderLarge(bayer, 1.5f);
+        }
         ImGui.Separator();
-        if(!string.IsNullOrWhiteSpace(star.HipparcosNumber)) {
-            DrawInformationValue("Hipparcos #", star.HipparcosNumber);
+        if(MultipleStarView.HasPrimary(star.Hip)) {
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextColored(in ConsoleStyle.Positive, ">");
+            ImGui.SameLine();
+            if(ImGui.Button("Multiple Star info")) {
+                _display = WindowDisplay.Multi;
+                SaveSettings();
+            }
+            ImGui.SameLine();
+            ImGui.TextColored(in ConsoleStyle.Positive, "<");
         }
         DrawInformationValue("RA (hrs:min:sec)", star.RightAscension);
         DrawInformationValue("Dec (deg)", star.Declination);
-        if(!string.IsNullOrWhiteSpace(star.Bayer)) {
-            DrawInformationValue("Bayer", star.Bayer);
-        }
         DrawInformationValueWithHelp(
             "Apparent Magnitude",
             star.Magnitude,
@@ -810,6 +1029,25 @@ internal static class OhMyStarsWindow {
             "How bright the star would appear from a standard distance of 10 parsecs (about 32.6 light years). Smaller or negative values are brighter.");
         DrawSpectrumInformationValue(star.SpectralType);
         DrawInformationValue("Distance (LY)", star.Distance);
+        if(ImGui.ArrowButton("##StarCatalogIdentifiers", _showStarIdentifiers ? ImGuiDir.Down : ImGuiDir.Right))
+            _showStarIdentifiers = !_showStarIdentifiers;
+        if(_showStarIdentifiers && OmsCatalog.Value.Stars.TryGetValue(star.Hip, out var catalogStar)) {
+            if(_identifierLabelWidth == 0 || !_identifierFont.Equals(ImGui.GetFont()) ||
+                _identifierFontSize != ImGui.GetFontSize()) {
+                _identifierFont = ImGui.GetFont();
+                _identifierFontSize = ImGui.GetFontSize();
+                _identifierLabelWidth = CatalogIdentifiers.Catalogs.Select(c => c.Name)
+                    .Concat(new[] { "Proper", "Bayer" }).Max(name => ImGui.CalcTextSize($"{name}:").X);
+            }
+            float valueX = ImGui.GetCursorPosX() + _identifierLabelWidth + ImGui.GetStyle().ItemSpacing.X;
+            foreach(var (name, value) in CatalogIdentifiers.Entries(catalogStar, includeCatalogNames: false,
+                struveSymbols: SupportsStruveSymbols)) {
+                ImGui.Text($"{name}:");
+                ImGui.SameLine();
+                ImGui.SetCursorPosX(valueX);
+                ImGui.Text(value);
+            }
+        }
 
         ImGui.Dummy(new float2(0f, 4f));
         ImGui.NewLine();
@@ -877,7 +1115,12 @@ internal static class OhMyStarsWindow {
         }
     }
 
-    // Constellation selection mode: pick a constellation, then one of its stars.
+    private static string StarDisplayName(StarInformation star) {
+        string heading = StarDesignations.StarHeading(star.HasProperName ? star.DisplayName : "",
+            star.Bayer, star.ConstellationAbbrev);
+        return heading.Length > 0 ? heading : star.DisplayName;
+    }
+
     private static (StarInformation Star, string DisplayName)? DrawConstellationSelector(
         IReadOnlyList<ConstellationInformation> constellations) {
         if(constellations.Count == 0) {
@@ -889,18 +1132,20 @@ internal static class OhMyStarsWindow {
         if(selectedConstellationIndex < 0) {
             selectedConstellationIndex = 0;
             _selectedConstellationId = constellations[0].Id;
-            _selectedStarHip = 0;
         }
 
         ConstellationInformation constellation = constellations[selectedConstellationIndex];
         if(ImGui.BeginCombo("Constellation", constellation.Name)) {
+            ImGui.InputText(new ImString("Search"), _constellationSearchBuffer);
+            string query = _constellationSearchBuffer.Value;
             for(int index = 0; index < constellations.Count; index++) {
                 ConstellationInformation candidate = constellations[index];
+                if(!candidate.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 bool selected = candidate.Id == _selectedConstellationId;
 
                 if(ImGui.Selectable(candidate.Name, selected)) {
                     _selectedConstellationId = candidate.Id;
-                    _selectedStarHip = 0;
                 }
             }
 
@@ -915,18 +1160,17 @@ internal static class OhMyStarsWindow {
         }
 
         int selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
-        if(selectedStarIndex < 0) {
-            selectedStarIndex = 0;
-            _selectedStarHip = constellation.Stars[0].Hip;
-        }
-
-        StarInformation star = constellation.Stars[selectedStarIndex];
-        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+        DrawStarSearchLabel();
+        if(ImGui.BeginCombo("##ConstellationStar", selectedStarIndex >= 0 ? StarDisplayName(constellation.Stars[selectedStarIndex]) : "Select a star")) {
+            ImGui.InputText(new ImString("Search"), _constellationStarSearchBuffer);
+            string query = _constellationStarSearchBuffer.Value;
             for(int index = 0; index < constellation.Stars.Count; index++) {
                 StarInformation candidate = constellation.Stars[index];
+                if(!StarDisplayName(candidate).Contains(query, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 bool selected = candidate.Hip == _selectedStarHip;
 
-                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                if(ImGui.Selectable($"{StarDisplayName(candidate)}##ConstellationStar{candidate.Hip}", selected)) {
                     _selectedStarHip = candidate.Hip;
                 }
             }
@@ -935,7 +1179,9 @@ internal static class OhMyStarsWindow {
         }
 
         selectedStarIndex = FindStarIndex(constellation.Stars, _selectedStarHip);
-        star = constellation.Stars[selectedStarIndex];
+        if(selectedStarIndex < 0)
+            return null;
+        StarInformation star = constellation.Stars[selectedStarIndex];
         return (star, star.DisplayName);
     }
 
@@ -948,16 +1194,10 @@ internal static class OhMyStarsWindow {
         }
 
         int selectedIndex = FindStarIndex(stars, _selectedStarHip);
-        if(selectedIndex < 0) {
-            selectedIndex = 0;
-            _selectedStarHip = stars[0].Hip;
-        }
-
-        StarInformation star = stars[selectedIndex];
-        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+        DrawStarSearchLabel();
+        if(ImGui.BeginCombo("##ProperStar", selectedIndex >= 0 ? stars[selectedIndex].DisplayName : "Select a star")) {
             ImGui.InputText(new ImString("Search"), _properSearchBuffer);
 
-            // An empty search shows every star; otherwise only names containing the search text.
             string properSearch = _properSearchBuffer.Value;
             IEnumerable<StarInformation> filteredStars = properSearch.Length == 0
                 ? stars
@@ -966,7 +1206,7 @@ internal static class OhMyStarsWindow {
             foreach(StarInformation candidate in filteredStars) {
                 bool selected = candidate.Hip == _selectedStarHip;
 
-                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                if(ImGui.Selectable($"{candidate.DisplayName}##Proper{candidate.Hip}", selected)) {
                     _selectedStarHip = candidate.Hip;
                 }
             }
@@ -975,12 +1215,13 @@ internal static class OhMyStarsWindow {
         DrawHelpMarker("A proper name is an individually assigned traditional or official name for a star, such as \"Sirius\" or \"Betelgeuse\", rather than a catalog designation.");
 
         selectedIndex = FindStarIndex(stars, _selectedStarHip);
-        star = stars[selectedIndex];
+        if(selectedIndex < 0)
+            return null;
+        StarInformation star = stars[selectedIndex];
         return (star, star.DisplayName);
     }
 
-    // Bayer selection mode: browse every catalog star with a Bayer designation, listed by its full
-    // constellation name plus expanded Bayer letter (e.g. "Cassiopeia Iota").
+    // Bayer selection mode uses the same full designation as the selected-star heading.
     private static (StarInformation Star, string DisplayName)? DrawBayerSelector() {
         IReadOnlyList<BayerStarInformation> stars = SkyCulturesRenderer.GetAllBayerStars();
         if(stars.Count == 0) {
@@ -989,25 +1230,22 @@ internal static class OhMyStarsWindow {
         }
 
         int selectedIndex = FindBayerStarIndex(stars, _selectedStarHip);
-        if(selectedIndex < 0) {
-            selectedIndex = 0;
-            _selectedStarHip = stars[0].Star.Hip;
-        }
-
-        BayerStarInformation star = stars[selectedIndex];
-        if(ImGui.BeginCombo("Star", star.DisplayName)) {
+        DrawStarSearchLabel();
+        if(ImGui.BeginCombo("##BayerStar", selectedIndex >= 0 ? stars[selectedIndex].DisplayName : "Select a star")) {
             ImGui.InputText(new ImString("Search"), _bayerSearchBuffer);
 
-            // An empty search shows every star; otherwise only names containing the search text.
             string bayerSearch = _bayerSearchBuffer.Value;
+            foreach(var alias in CatalogIdentifiers.SearchSystemBayerAliases(OmsCatalog.Value, bayerSearch))
+                if(ImGui.Selectable($"{alias.Label}##BayerSystem{alias.Id}", SelectedOmsId == alias.Id))
+                    SetSelectedOmsStar(alias.Id);
             IEnumerable<BayerStarInformation> filteredStars = bayerSearch.Length == 0
                 ? stars
-                : stars.Where(s => s.DisplayName.Contains(bayerSearch, StringComparison.OrdinalIgnoreCase));
+                : stars.Where(s => StarDesignations.MatchesBayerSearch(s.DisplayName, bayerSearch));
 
             foreach(BayerStarInformation candidate in filteredStars) {
                 bool selected = candidate.Star.Hip == _selectedStarHip;
 
-                if(ImGui.Selectable(candidate.DisplayName, selected)) {
+                if(ImGui.Selectable($"{candidate.DisplayName}##Bayer{candidate.Star.Hip}", selected)) {
                     _selectedStarHip = candidate.Star.Hip;
                 }
             }
@@ -1017,49 +1255,87 @@ internal static class OhMyStarsWindow {
         DrawHelpMarker("A Bayer designation identifies a star within its constellation by a Greek letter (or, once those run out, a Roman letter) usually assigned in rough order of brightness, such as \"Alpha\" for the brightest star in a constellation.");
 
         selectedIndex = FindBayerStarIndex(stars, _selectedStarHip);
-        star = stars[selectedIndex];
+        if(selectedIndex < 0)
+            return null;
+        BayerStarInformation star = stars[selectedIndex];
         return (star.Star, star.DisplayName);
     }
 
-    // Cursor selection mode: the star last picked by clicking near it in the 3D view.
-    private static (StarInformation Star, string DisplayName)? DrawPickedSelector() {
-        const string pickerOwner = "SelectStar";
-        StarPicker.KeepAlive(pickerOwner);
-        bool picking = StarPicker.IsActiveFor(pickerOwner);
-        if(picking) {
-            if(ConsoleWidgets.PositiveButton("Pick Star with Cursor", "PickStarCursor", default))
-                StarPicker.Cancel();
-        } else if(ConsoleWidgets.Button("Pick Star with Cursor", "PickStarCursor", default)) {
-            StarPicker.Start(pickerOwner, SetSelectedStarFromPick);
-        }
-        if(picking) {
-            ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Star Picker On");
-        }
-        if(picking && StarPicker.NoStarNearLastClick)
-            ImGui.TextColored(in ConsoleStyle.TextMuted, "No star near the last click.");
+    internal static bool SupportsStruveSymbols =>
+        ImGui.GetFont().IsGlyphInFont(0x03a3) && ImGui.GetFont().IsGlyphInFont(0x039f);
 
-        if(_pickedStarHip <= 0) {
-            ImGui.TextColored(in ConsoleStyle.TextMuted, "No star picked yet.");
-            return null;
-        }
-
-        string name = SkyCulturesRenderer.DescribeStar(_pickedStarHip);
-        if(!SkyCulturesRenderer.TryGetStarInformation(_pickedStarHip, out StarInformation info)) {
-            info = new StarInformation(_pickedStarHip, name, string.Empty, string.Empty, false, string.Empty,
-                string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
-        }
-        return (info, name);
+    private static void DrawStarSearchLabel() {
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Star");
+        ImGui.SameLine();
     }
 
-    private static int _pickedStarHip;
+    private static (StarInformation Star, string DisplayName)? DrawCatalogSelector() {
+        string column = _starSelectionMode == StarSelectionMode.All ? "" : _identifierColumn;
+        string preview = SelectedOmsId.HasValue && OmsCatalog.Value.Stars.TryGetValue(SelectedOmsId.Value, out var current)
+            ? CatalogIdentifiers.SearchLabel(current, column) : "";
+        if(preview.Length == 0)
+            preview = "Select a star";
+        DrawStarSearchLabel();
+        if(ImGui.BeginCombo("##CatalogSearch", preview)) {
+            ImGui.InputText(new ImString("Search"), _catalogSearchBuffer);
+            string query = ((string)_catalogSearchBuffer.Value).Trim();
+            if(_cachedIdentifierColumn != column || _cachedIdentifierQuery != query) {
+                _catalogSearchCancellation?.Cancel();
+                _catalogSearchCancellation?.Dispose();
+                _catalogSearchCancellation = null;
+                _catalogSearchTask = null;
+                _catalogSearchResults = [];
+                _catalogSearchError = null;
+                _catalogSearchChangedAt = Environment.TickCount64;
+                _cachedIdentifierColumn = column;
+                _cachedIdentifierQuery = query;
+            }
+            bool emptyAll = column.Length == 0 && query.Length == 0;
+            if(!emptyAll && _catalogSearchTask is null && _catalogSearchError is null &&
+                Environment.TickCount64 - _catalogSearchChangedAt >= 150) {
+                var catalog = OmsCatalog.Value;
+                _catalogSearchCancellation?.Dispose();
+                _catalogSearchCancellation = new CancellationTokenSource();
+                CancellationToken token = _catalogSearchCancellation.Token;
+                _catalogSearchTask = Task.Run(() =>
+                    CatalogIdentifiers.Search(catalog, column, query, token, partialLimit: 201).Take(201).ToArray(), token);
+                _ = _catalogSearchTask.ContinueWith(task =>
+                    Console.WriteLine($"OhMyStars: catalog identifier search failed: {task.Exception}"),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            }
+            if(_catalogSearchTask is { IsCompleted: true } search) {
+                if(search.IsFaulted)
+                    _catalogSearchError = search.Exception!.GetBaseException().Message;
+                else if(!search.IsCanceled)
+                    _catalogSearchResults = search.GetAwaiter().GetResult();
+            }
+            foreach(var result in _catalogSearchResults.Take(200)) {
+                if(ImGui.Selectable($"{result.Label}##Catalog{result.Id}_{result.Label}", SelectedOmsId == result.Id))
+                    SetSelectedOmsStar(result.Id);
+            }
+            if(emptyAll)
+                ImGui.TextColored(in ConsoleStyle.TextMuted, "Enter text to search all identifiers.");
+            else if(_catalogSearchError is not null) {
+                ImGui.TextWrapped($"Catalog search failed: {_catalogSearchError}");
+                if(ImGui.Button("Retry search")) {
+                    _catalogSearchTask = null;
+                    _catalogSearchError = null;
+                }
+            } else if(_catalogSearchTask is null || !_catalogSearchTask.IsCompleted)
+                ImGui.TextColored(in ConsoleStyle.TextMuted, "Searching...");
+            else if(_catalogSearchResults.Length > 200)
+                ImGui.TextColored(in ConsoleStyle.TextMuted, "Showing the first 200 matches. Enter more of the identifier to narrow the search.");
+            else if(_catalogSearchResults.Length == 0)
+                ImGui.TextColored(in ConsoleStyle.TextMuted, "No matching catalog identifiers.");
+            ImGui.EndCombo();
+        }
+        return null;
+    }
 
     // Called by StarPicker for each star picked with the cursor.
     public static void SetSelectedStarFromPick(int hip) {
-        _pickedStarHip = hip;
         _selectedStarHip = hip;
-        _starSelectionMode = StarSelectionMode.Picked;
-        _display = WindowDisplay.Information;
         _dropdownLabelHip = hip;
         _dropdownLabelName = SkyCulturesRenderer.DescribeStar(hip);
     }
@@ -1631,9 +1907,17 @@ internal static class OhMyStarsWindow {
         return defaultValue;
     }
 
-    // SpectrumLegend is a sub-view of the Information tab, so it is persisted as its parent tab.
+    internal static void OpenMultipleStarHelp() => _display = WindowDisplay.MultiHelp;
+
+    internal static void CloseMultipleStarHelp() => _display = WindowDisplay.Multi;
+
+    // Informational sub-views are persisted as their parent tabs.
     private static WindowDisplay NormalizeTab(WindowDisplay display) {
-        return display == WindowDisplay.SpectrumLegend ? WindowDisplay.Information : display;
+        return display switch {
+            WindowDisplay.SpectrumLegend => WindowDisplay.Information,
+            WindowDisplay.MultiHelp => WindowDisplay.Multi,
+            _ => display
+        };
     }
 
     private static WindowDisplay GetPersistableTab() {

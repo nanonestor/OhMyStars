@@ -14,6 +14,9 @@ internal static unsafe class StarPicker {
     private const float ClickDragTolerancePx = 4f;
 
     private static Action<int>? _onPicked;
+    private static Func<int, bool>? _canPick;
+    private static Func<float2, long?>? _customPick;
+    private static Action<long>? _onCustomPicked;
 
     public static bool Active { get; private set; }
     // Identifies which UI started the current picking session, so each UI only shows its own state.
@@ -36,9 +39,11 @@ internal static unsafe class StarPicker {
             _keptAlive = true;
     }
 
-    public static void Start(string owner, Action<int> onPicked) {
+    public static void Start(string owner, Action<int> onPicked, Func<int, bool>? canPick = null) {
+        Cancel();
         Owner = owner;
         _onPicked = onPicked;
+        _canPick = canPick;
         CurrentHip = 0;
         PendingHip = 0;
         ConfirmMode = false;
@@ -46,6 +51,12 @@ internal static unsafe class StarPicker {
         NoStarNearLastClick = false;
         Active = true;
         _keptAlive = true;
+    }
+
+    public static void StartCustom(string owner, Func<float2, long?> pick, Action<long> onPicked) {
+        Start(owner, _ => { });
+        _customPick = pick;
+        _onCustomPicked = onPicked;
     }
 
     // Starts continuous picking where the latest picked star must be confirmed (Confirm / Cancel) before the
@@ -71,6 +82,9 @@ internal static unsafe class StarPicker {
         ConfirmMode = false;
         _prompt = string.Empty;
         _onPicked = null;
+        _canPick = null;
+        _customPick = null;
+        _onCustomPicked = null;
         NoStarNearLastClick = false;
     }
 
@@ -84,11 +98,17 @@ internal static unsafe class StarPicker {
         _keptAlive = false;
 
         // In confirm mode, each click replaces the pending star until the user confirms it.
-        if(ImGui.IsMouseReleased(ImGuiMouseButton.Left) && !ImGui.GetIO().WantCaptureMouse) {
+        if(ImGui.IsMouseReleased(ImGuiMouseButton.Left) && !ImGui.GetIO().WantCaptureMouse &&
+            !ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow)) {
             float2 drag = ImGui.GetMouseDragDelta(ImGuiMouseButton.Left, -1f);
             if(drag.X * drag.X + drag.Y * drag.Y <= ClickDragTolerancePx * ClickDragTolerancePx) {
                 float2 mouse = ImGui.GetIO().MousePos;
-                if(SkyCulturesRenderer.TryPickStar(camera, center, radius, mouse, PickRadiusPx, out int hip)) {
+                if(_customPick is not null) {
+                    long? id = _customPick(mouse);
+                    NoStarNearLastClick = !id.HasValue;
+                    if(id.HasValue)
+                        _onCustomPicked?.Invoke(id.Value);
+                } else if(SkyCulturesRenderer.TryPickStar(camera, center, radius, mouse, PickRadiusPx, out int hip, _canPick)) {
                     CurrentHip = hip;
                     NoStarNearLastClick = false;
                     if(ConfirmMode)
@@ -119,8 +139,11 @@ internal static unsafe class StarPicker {
         ImDrawListExtensions.AddLine(drawList, tail, tip, color, 2f);
         ImDrawListExtensions.AddTriangleFilled(drawList, tip, tip + new float2(-10f, -2f), tip + new float2(-2f, -10f), color);
 
-        string name = SkyCulturesRenderer.DescribeStar(CurrentHip);
-        ImDrawListExtensions.AddText(drawList, tail + new float2(-4f, -18f), color, name);
+        string name = SkyCulturesRenderer.BackgroundName(CurrentHip);
+        float textHeight = ImGui.CalcTextSize(name).Y;
+        float2 labelPosition = tail + new float2(-4f, -textHeight - 10f);
+        if(name.Length > 0)
+            SkyLabelRenderer.Add(labelPosition, color, name, 3);
         _pendingScreen = screen;
     }
 

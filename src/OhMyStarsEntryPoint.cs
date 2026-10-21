@@ -13,6 +13,9 @@ public class OhMyStarsEntryPoint {
     [StarMapAllModsLoaded]
     public static void OnFullyLoaded() {
         _harmony = new Harmony("nanonestor.ohmystars");
+        _harmony.Patch(
+            AccessTools.Method(typeof(KSA.Program), nameof(KSA.Program.DrawProgramMenusHook)),
+            postfix: new HarmonyMethod(typeof(OhMyStarsEntryPoint), nameof(DrawProgramMenu)));
 
         OhMyStarsSettingsStore.Init();
         OhMyStarsSettingsStore.Load();
@@ -38,6 +41,19 @@ public class OhMyStarsEntryPoint {
         }
         if(ImGui.MenuItem("Star Editor")) {
             StarsEditWindow.ToggleWindow();
+        }
+    }
+
+    internal static void DrawProgramMenu() {
+        if(AppDomain.CurrentDomain.GetAssemblies().Any(assembly => assembly.GetName().Name == "ModMenu")) {
+            return;
+        }
+
+        if(ImGui.MenuItem("Oh My Stars")) {
+            OhMyStarsWindow.OpenWindow();
+        }
+        if(ImGui.MenuItem("Stars Editor")) {
+            StarsEditWindow.IsOpen = true;
         }
     }
 

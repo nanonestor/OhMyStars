@@ -9,7 +9,7 @@
 
   <!-- Path to the KSA install; override via KSAGameDir env var or a local, untracked .user.props file -->
   <PropertyGroup>
-    <KSAGameDir Condition="'$(KSAGameDir)' == ''">$(ProgramFiles)\Kitten Space Agency</KSAGameDir>
+    <KSAGameDir Condition="'$(KSAGameDir)' == ''">$(ProgramFiles)\Ahwoo\Games\Kitten Space Agency</KSAGameDir>
   </PropertyGroup>
 
   <Import Project="OhMyStars.csproj.user.props" Condition="Exists('OhMyStars.csproj.user.props')" />
@@ -32,13 +32,20 @@
     <ModContent Include="..\lines_in_20.txt">
       <TargetPath>lines_in_20.txt</TargetPath>
     </ModContent>
+    <ModContent Include="..\catalogs\oms_catalog.csv;..\catalogs\oms_catalog_readme.md;..\catalogs\attributions.md;..\catalogs\oms-notes.txt">
+      <TargetPath>catalogs\%(Filename)%(Extension)</TargetPath>
+    </ModContent>
+    <ModContent Include="..\catalogs\orb6orbits.txt;..\catalogs\orb6format.txt;..\catalogs\orb6-source.json">
+      <TargetPath>catalogs\%(Filename)%(Extension)</TargetPath>
+    </ModContent>
   </ItemGroup>
 
   <!-- Copies built mod files to the game's mods folder -->
   <Target Name="CopyCustomContent" AfterTargets="AfterBuild">
+    <Delete Files="$(BuildDir)catalogs\README.md;$(BuildDir)catalogs\build-manifest.json;$(SendBuildToTestDir)\catalogs\README.md;$(SendBuildToTestDir)\catalogs\build-manifest.json" />
     <!-- Legacy parallax-era output; its old .bin files were picked up as extra star binaries. -->
     <RemoveDir Directories="$(SendBuildToTestDir)\parallax" />
-    <Delete Files="$(SendBuildToTestDir)\athyg_32_reduced_m10.toml" />
+    <Delete Files="$(SendBuildToTestDir)\athyg_32_reduced_m10.toml;$(SendBuildToTestDir)\athyg_32_reduced_m10.csv;$(BuildDir)athyg_32_reduced_m10.csv" />
     <!-- Old names/locations of the default star binary (now binaries\OhMyStars_stars.bin + binaries\OhMyStars__stars_IDs.bin). -->
     <Delete Files="$(SendBuildToTestDir)\OhMyStars_curated.bin;$(SendBuildToTestDir)\OhMyStars_curated.ohmystars.bin;$(SendBuildToTestDir)\OhMyStars_curated.bin.version;$(SendBuildToTestDir)\OhMyStars_stars.bin;$(SendBuildToTestDir)\OhMyStars__stars_IDs.bin;$(SendBuildToTestDir)\OhMyStars_stars.bin.version" />
     <Copy SourceFiles="$(BuildDir)mod.toml" DestinationFolder="$(SendBuildToTestDir)" />
@@ -46,7 +53,6 @@
     <Copy SourceFiles="$(BuildDir)$(ModNamespace).dll" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="ModMenu.Attributes.dll" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\settings.ini" DestinationFolder="$(SendBuildToTestDir)" SkipUnchangedFiles="false" />
-    <Copy SourceFiles="$(BuildDir)athyg_32_reduced_m10.csv" DestinationFolder="$(SendBuildToTestDir)" />
     <Copy SourceFiles="$(BuildDir)NOTICE.txt" DestinationFolder="$(SendBuildToTestDir)" />
     <MakeDir Directories="$(BuildDir)licenses;$(BuildDir)skycultures;$(SendBuildToTestDir)\licenses;$(SendBuildToTestDir)\skycultures" />
     <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(BuildDir)\%(TargetPath)')" SkipUnchangedFiles="true" />
@@ -73,49 +79,33 @@
     <None Update="settings.ini">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="athyg_32_reduced_m10.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <None Remove="athyg_32_reduced_m10.csv" />
   </ItemGroup>
-
-  <!-- Original hardcoded HintPaths, kept for reversion:
-  <ItemGroup>
-    <Reference Include="Brutal.Core.Common">
-      <HintPath>..\..\..\..\..\..\Program Files\Kitten Space Agency\Brutal.Core.Common.dll</HintPath>
-    </Reference>
-    <Reference Include="Brutal.Core.Logging">
-      <HintPath>..\..\..\..\..\..\Program Files\Kitten Space Agency\Brutal.Core.Logging.dll</HintPath>
-    </Reference>
-    <Reference Include="Brutal.Core.Numerics">
-      <HintPath>..\..\..\..\..\..\Program Files\Kitten Space Agency\Brutal.Core.Numerics.dll</HintPath>
-    </Reference>
-    <Reference Include="Brutal.ImGui">
-      <HintPath>..\..\..\..\..\..\Program Files\Kitten Space Agency\Brutal.ImGui.dll</HintPath>
-    </Reference>
-    <Reference Include="KSA">
-      <HintPath>..\..\..\..\..\..\Program Files\Kitten Space Agency\KSA.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  -->
 
   <ItemGroup>
     <Reference Include="ModMenu.Attributes">
       <HintPath>ModMenu.Attributes.dll</HintPath>
     </Reference>
-    <Reference Include="Brutal.Core.Common">
-      <HintPath>$(KSAGameDir)\Brutal.Core.Common.dll</HintPath>
+    <Reference Include="Brutal.Core">
+      <HintPath>$(KSAGameDir)\Brutal.Core.dll</HintPath>
     </Reference>
-    <Reference Include="Brutal.Core.Strings">
-      <HintPath>$(KSAGameDir)\Brutal.Core.Strings.dll</HintPath>
+    <Reference Include="Brutal.Strings">
+      <HintPath>$(KSAGameDir)\Brutal.Strings.dll</HintPath>
     </Reference>
-    <Reference Include="Brutal.Core.Logging">
-      <HintPath>$(KSAGameDir)\Brutal.Core.Logging.dll</HintPath>
+    <Reference Include="Brutal.Logging">
+      <HintPath>$(KSAGameDir)\Brutal.Logging.dll</HintPath>
     </Reference>
-    <Reference Include="Brutal.Core.Numerics">
-      <HintPath>$(KSAGameDir)\Brutal.Core.Numerics.dll</HintPath>
+    <Reference Include="Brutal.Numerics">
+      <HintPath>$(KSAGameDir)\Brutal.Numerics.dll</HintPath>
     </Reference>
     <Reference Include="Brutal.ImGui">
       <HintPath>$(KSAGameDir)\Brutal.ImGui.dll</HintPath>
+    </Reference>
+    <Reference Include="Brutal.ImGui.Abstractions">
+      <HintPath>$(KSAGameDir)\Brutal.ImGui.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Brutal.ImGui.Extensions">
+      <HintPath>$(KSAGameDir)\Brutal.ImGui.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="BepuUtilities">
       <HintPath>$(KSAGameDir)\BepuUtilities.dll</HintPath>

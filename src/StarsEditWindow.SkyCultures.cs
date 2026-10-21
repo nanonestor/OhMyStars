@@ -497,8 +497,8 @@ internal static partial class StarsEditWindow
 				ship.Append(pair.Key).Append(' ').Append(pair.Value.Count.ToString(CultureInfo.InvariantCulture));
 				foreach (ConstellationSegment seg in pair.Value)
 				{
-					ship.Append(' ').Append(seg.FromHip.ToString(CultureInfo.InvariantCulture))
-						.Append(' ').Append(seg.ToHip.ToString(CultureInfo.InvariantCulture));
+					ship.Append(' ').Append((-seg.FromHip).ToString(CultureInfo.InvariantCulture))
+						.Append(' ').Append((-seg.ToHip).ToString(CultureInfo.InvariantCulture));
 				}
 				ship.Append('\n');
 			}

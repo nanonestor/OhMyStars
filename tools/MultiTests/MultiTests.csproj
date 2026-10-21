@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\MultipleStarCatalog.cs" Link="MultipleStarCatalog.cs" />
+    <Compile Include="..\..\src\StarDesignations.cs" Link="StarDesignations.cs" />
+    <Compile Include="..\..\src\MultipleStarOrbits.cs" Link="MultipleStarOrbits.cs" />
+    <Compile Include="..\..\src\CatalogIdentifiers.cs" Link="CatalogIdentifiers.cs" />
+    <Compile Include="..\..\src\ScreenLabelLayout.cs" Link="ScreenLabelLayout.cs" />
+  </ItemGroup>
+</Project>

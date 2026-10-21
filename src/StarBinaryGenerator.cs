@@ -44,7 +44,7 @@ public sealed class GeneratorOptions
 	public bool UseAbsoluteMagnitudeForSizing;
 
 	// Comma-delimited stars that are always written regardless of the filters and dimness cull.
-	// Entries are matched against the catalog 'proper' column (case-insensitive) or the 'id' column.
+	// Entries match 'proper' or 'oms_id' (falling back to 'id' for imported non-OMS CSVs).
 	public bool UseAlwaysInclude;
 	public string AlwaysIncludeList = string.Empty;
 	public bool AlwaysIncludeByProperName;
@@ -342,7 +342,7 @@ public static class StarBinaryGenerator
 		c.Hip = FindColumn(colMap, "hip");
 		c.Hyg = FindColumn(colMap, "hyg");
 		c.Tyc = FindColumn(colMap, "tyc");
-		c.Id = FindColumn(colMap, "id");
+		c.Id = FindColumn(colMap, "oms_id", "id");
 		c.Proper = FindColumn(colMap, "proper");
 		c.Bayer = FindColumn(colMap, "bayer");
 		c.Con = FindColumn(colMap, "con");
@@ -593,11 +593,12 @@ public static class StarBinaryGenerator
 		{
 			throw new InvalidDataException(options.AlwaysIncludeByProperName
 				? "Always-include by proper name is enabled, but the CSV has no 'proper' column."
-				: "Always-include by ID is enabled, but the CSV has no 'id' column.");
+				: "Always-include by ID is enabled, but the CSV has no 'oms_id' or 'id' column.");
 		}
 
 		List<GameRecord> records = new();
 		List<StarIdentityFile.Record> identities = new();
+		int solCatalogId = 0;
 		long lineCount = 0;
 		string? line;
 
@@ -643,6 +644,8 @@ public static class StarBinaryGenerator
 			string proper = GetString(cols, colProper);
 			if (string.Equals(proper, "Sol", StringComparison.OrdinalIgnoreCase) || (colDist >= 0 && TryParseDouble(cols, colDist, out double dz) && dz <= 1e-6))
 			{
+				if (string.Equals(proper, "Sol", StringComparison.OrdinalIgnoreCase))
+					solCatalogId = GetInt(cols, colId);
 				if (analysis is not null) analysis.SolRowsSkipped++;
 				continue;
 			}
@@ -845,7 +848,9 @@ public static class StarBinaryGenerator
 			records.Add(MakeSolRecord());
 			if (options.WriteSisterFile)
 			{
-				identities.Add(MakeSolIdentity());
+				var sol = MakeSolIdentity();
+				sol.CatalogId = solCatalogId;
+				identities.Add(sol);
 			}
 		}
 
