@@ -13,13 +13,26 @@ unresolved blends. A recorded system relationship does not prove gravitational
 binding. Missing evidence is not evidence of singleness or physical membership.
 Curated exceptions are documented by affected OMS IDs in [oms-notes.txt](oms-notes.txt).
 
+User-declared definitive system reviews are kept separately in
+[definitively-correct-systems.csv](definitively-correct-systems.csv) in developer
+builds. This list enables Debug-only green Multi indicators; it does not add
+a CSV column, change classifications by itself, or certify source accuracy.
+Release builds omit the list and indicators. The ten-system review preserves
+primary P, applies scoped companion C/V corrections, and suppresses Capella
+O/P without recycling their IDs. See [oms-notes.txt](oms-notes.txt) for details.
+
 ## Column definitions
 
 ### OMS ID and original AT-HYG columns
 
 Coordinate frame/equinox and measurement epoch are different concepts. The
 supplied RA/Dec is used in its J2000 frame with no additional precession.
-Original provenance fields remain unchanged. A Gaia distance/ID alone does
+Original provenance fields remain unchanged except that filling a missing spectral
+classification from WDS sets `spect_src=WDS`. Known AT-HYG spectra are never
+replaced. WDS types are assigned only to exact individual pair endpoints: a single
+type belongs to the first endpoint, and a simple `+` separates first/second types.
+Conflicting, group/blended and complex parenthesized spectra are not inferred.
+A Gaia distance/ID alone does
 not certify that a row's RA/Dec was measured by Gaia.
 
 | Column | Meaning and units |

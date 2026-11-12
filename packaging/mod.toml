@@ -1,3 +1,9 @@
 name="Oh My Stars"
-version = "1.6.0"
+version = "1.7.0"
 author = "nanonestor"
+
+# Part asset bundles; load order matters (GameData patches the generated part)
+assets = [
+"parts/HubbleTubeAssets.xml",
+"parts/HubbleTubeGameData.xml",
+]

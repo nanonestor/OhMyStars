@@ -84,6 +84,25 @@ internal sealed class MultipleStarOrbits {
             .Select(o => new Curve(o.Companion, Sample(o, layout[o.Reference]))).ToArray();
     }
 
+    public static bool TouchesCurve(MultipleStarCatalog.Offset center, double radius,
+        IReadOnlyList<MultipleStarCatalog.Offset> points, double lineThickness = 1) {
+        double reach = radius + lineThickness / 2;
+        for(int i = 1; i < points.Count; i++) {
+            var start = points[i - 1];
+            var end = points[i];
+            double dx = end.East - start.East, dy = end.North - start.North;
+            double lengthSquared = dx * dx + dy * dy;
+            double t = lengthSquared > 0
+                ? Math.Clamp(((center.East - start.East) * dx + (center.North - start.North) * dy) / lengthSquared, 0, 1)
+                : 0;
+            double east = center.East - (start.East + t * dx);
+            double north = center.North - (start.North + t * dy);
+            if(east * east + north * north <= reach * reach)
+                return true;
+        }
+        return false;
+    }
+
     public static MultipleStarCatalog.Offset[] Sample(Orbit orbit, MultipleStarCatalog.Offset origin) {
         double radians = Math.PI / 180;
         double node = orbit.Node * radians, periastron = orbit.Periastron * radians;

@@ -8,6 +8,14 @@ namespace OhMyStars;
 internal static class MultipleStarView {
     private const string PickerOwner = "MultiPrimary";
     private const float RingRadius = 8f;
+#if DEBUG
+    private static readonly float4 DefinitiveTextColor = new(0, 1, 0, 1);
+    private static string? _approvalError;
+    private static readonly Dictionary<long, ImInputString> ReviewNotes = new();
+    private static readonly HashSet<long> ShowReviewNotes = new();
+    private static readonly Dictionary<long, string> ReviewErrors = new();
+    private static readonly Dictionary<long, MultipleStarCatalog.ComponentReview> FailedReviews = new();
+#endif
     public const double DefaultMagnitudeCutoff = 8.9;
     public const double DefaultComponentMagnitudeCutoff = 11;
     public const float MinMagnitudeCutoff = 0f;
@@ -92,6 +100,9 @@ internal static class MultipleStarView {
         if(_selected == id)
             return;
         _selected = id;
+#if DEBUG
+        _approvalError = null;
+#endif
         _layout = null;
         ApproximatePositions.Clear();
         _orbitCurves = null;
@@ -115,22 +126,62 @@ internal static class MultipleStarView {
         long? selection = OhMyStarsWindow.SelectedOmsId;
         if(_catalog is not null)
             Select(selection.HasValue && _systems.ContainsKey(selection.Value) ? selection : null);
+#if DEBUG
+        if(_selected is long primaryId && _systems.TryGetValue(primaryId, out var reviewSystem) &&
+            reviewSystem.Primary.Role == "P" && _catalog is not null) {
+            bool approved = _catalog.DefinitivelyCorrectPrimaries.Contains(primaryId);
+            float approvalRowWidth = ImGui.GetContentRegionAvail().X;
+            string approvalLabel = approved ? "Undo approval" : "Approve as correct";
+            if(ImGui.Button(approvalLabel + "##MultiApproval")) {
+                try {
+                    _catalog.SetDefinitiveApproval(primaryId, !approved);
+                    _approvalError = null;
+                } catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException) {
+                    _approvalError = $"Could not save system approval: {ex.Message}";
+                    Console.WriteLine($"OhMyStars: {_approvalError}");
+                }
+            }
+            if(ImGui.IsItemHovered())
+                ConsoleWidgets.Tooltip("Developer review only. Saved locally for later import; does not change component types.");
+            if(_catalog.DefinitivelyCorrectPrimaries.Contains(primaryId)) {
+                const string status = "Definitively correct";
+                float statusWidth = ImGui.CalcTextSize(status).X;
+                if(approvalRowWidth >= ImGui.CalcTextSize(approvalLabel).X +
+                    ImGui.GetStyle().FramePadding.X * 2 + statusWidth + ImGui.GetStyle().ItemSpacing.X) {
+                    ImGui.SameLine();
+                }
+                ImGui.SetCursorPosX(ImGui.GetCursorPosX() +
+                    Math.Max(0, ImGui.GetContentRegionAvail().X - statusWidth));
+                ImGui.TextColored(in DefinitiveTextColor, status);
+            }
+            if(_approvalError is not null)
+                ImGui.TextWrapped(_approvalError);
+        }
+#endif
         bool rings = ShowPrimaryRings;
         if(ImGui.Checkbox("Highlight multi star systems", ref rings)) {
             ShowPrimaryRings = rings;
             OhMyStarsWindow.SaveSettings();
         }
+        ImGui.SameLine();
+        // makes the button right aligned to the window
+        ImGui.SetCursorPosX(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - ImGui.CalcTextSize("? Information##MultiHelp").X);
+        if(ImGui.Button("? Information##MultiHelp"))
+            OhMyStarsWindow.OpenMultipleStarHelp();
+        if(ImGui.IsItemHovered())
+            ConsoleWidgets.Tooltip("Information");
+        ImGui.Text("Filters");
+        ImGui.SameLine();
         if(ImGui.ArrowButton("##MultiFilters", _showFilters ? ImGuiDir.Down : ImGuiDir.Right))
             _showFilters = !_showFilters;
         if(ImGui.IsItemHovered())
             ConsoleWidgets.Tooltip("Filters");
-        ImGui.SameLine();
-        if(ImGui.Button("?##MultiHelp"))
-            OhMyStarsWindow.OpenMultipleStarHelp();
-        if(ImGui.IsItemHovered())
-            ConsoleWidgets.Tooltip("Information");
-        if(_showFilters)
+        
+
+        if(_showFilters) {
+            ImGui.Separator();
             DrawFilters();
+        }
         ImGui.Separator();
         if(_error is not null) {
             ImGui.TextWrapped($"Could not load curated catalog: {_error}");
@@ -259,44 +310,68 @@ internal static class MultipleStarView {
 
     private static void DrawCoordinates(MultipleStarCatalog.Star star) {
         DrawFields(string.Join(" / ", new[] {
-            Field("RA", star["ra"], "h"),
-            Field("Dec", star["dec"], "deg")
+            Field("RA", star.Number("ra")?.ToString("F3", CultureInfo.InvariantCulture) ?? "", "h"),
+            Field("Dec", star.Number("dec")?.ToString("F3", CultureInfo.InvariantCulture) ?? "", "deg")
         }.Where(field => field.Length > 0)));
     }
 
     private static void DrawComponents(MultipleStarCatalog.System system) {
+        string rho = ImGui.GetFont().IsGlyphInFont(0x03c1) ? "\u03c1" : "rho";
+        string theta = ImGui.GetFont().IsGlyphInFont(0x03b8) ? "\u03b8" : "theta";
+        string[] headers = ["Component / Rel", "App Mag",
+            rho == "rho" ? "rho" : $"{rho} rho",
+            theta == "theta" ? "Theta" : $"{theta} Theta",
+            "rel PM", "Spectral", "Abs Mag"];
         var eligibleMembers = system.Members.Where(star => MultipleStarCatalog.IsEntryVisible(star, ExcludeWdsOnly, ExcludeVisual)).ToArray();
         var unlisted = eligibleMembers.Where(star => MultipleStarCatalog.HasNoPositionData(star, system)).ToArray();
-        var members = eligibleMembers.Where(star => !MultipleStarCatalog.HasNoPositionData(star, system))
-            .OrderBy(star => MultipleStarCatalog.IsDimComponent(star, system.Primary, ComponentMagnitudeCutoff)).ToArray();
+        var members = eligibleMembers.OrderBy(star => MultipleStarCatalog.HasNoPositionData(star, system))
+            .ThenBy(star => MultipleStarCatalog.IsDimComponent(star, system.Primary, ComponentMagnitudeCutoff)).ToArray();
         List<string[]> rows = new();
         foreach(var star in members) {
             string relationship = star.RelationshipDisplay;
-            var motion = MultipleStarCatalog.RelativeProperMotion(star, system.Primary);
-            string motionText = string.Join("  ", new[] {
-                Field("rel PM RA:", motion.Ra?.ToString("0.###", CultureInfo.InvariantCulture) ?? "", "mas/year"),
-                Field("rel PM dec:", motion.Dec?.ToString("0.###", CultureInfo.InvariantCulture) ?? "", "mas/year")
-            }.Where(field => field.Length > 0));
             string[] fields = [
                 relationship.Length > 0 ? $"{star.ListLabel} / {relationship}" : star.ListLabel,
                 star.Number("mag") is double magnitude
-                    ? $"App Mag:{magnitude.ToString("F2", CultureInfo.InvariantCulture)}" : "",
+                    ? magnitude.ToString("F2", CultureInfo.InvariantCulture) : "",
+                MeasurementField("", star["rho_arcsec"]),
+                MeasurementField("", star["theta_deg"]),
+                MultipleStarCatalog.RelativeProperMotionMagnitude(star, system.Primary)?.ToString("0.###", CultureInfo.InvariantCulture) ?? "U",
+                Field("", star["spect"]),
                 star.Number("absmag") is double absoluteMagnitude
-                    ? $"Abs Mag:{absoluteMagnitude.ToString("F2", CultureInfo.InvariantCulture)}" : "",
-                MeasurementField("rho:", star["rho_arcsec"]),
-                MeasurementField("theta:", star["theta_deg"]),
-                Field("B-V:", star["ci"]),
-                motionText.Length > 0 ? $"({motionText})" : ""
+                    ? absoluteMagnitude.ToString("F2", CultureInfo.InvariantCulture) : ""
             ];
             rows.Add(fields);
         }
-        float[] widths = new float[rows[0].Length];
+        int[] columns = Enumerable.Range(0, headers.Length).ToArray();
+        float[] widths = headers.Select(header => ImGui.CalcTextSize(header).X).ToArray();
+        widths[5] += ImGui.GetStyle().FramePadding.X * 2;
         foreach(string[] row in rows)
             for(int column = 0; column < row.Length; column++)
                 widths[column] = Math.Max(widths[column], ImGui.CalcTextSize(row[column]).X);
+#if DEBUG
+        float reviewWidth = ImGui.CalcTextSize("C - Companion").X + ImGui.GetFrameHeight() * 2 +
+            ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetStyle().ItemSpacing.X * 2;
+        float componentTextWidth = widths[0];
+        widths[0] += reviewWidth + ImGui.GetStyle().ItemSpacing.X;
+#endif
         float checkboxX = ImGui.GetCursorPosX();
         float startX = checkboxX + ImGui.GetFrameHeight() + ImGui.CalcTextSize("  ").X;
         float spacing = ImGui.CalcTextSize("  ").X;
+        float headerX = startX;
+        foreach(int column in columns) {
+            if(column > 0)
+                ImGui.SameLine();
+            ImGui.SetCursorPosX(headerX);
+            if(headers[column] == "Spectral") {
+                if(ImGui.SmallButton("Spectral##MultiSpectralLegend"))
+                    OhMyStarsWindow.OpenSpectrumLegend();
+            } else {
+                ImGui.AlignTextToFramePadding();
+                ImGui.Text(headers[column]);
+            }
+            headerX += widths[column] + spacing;
+        }
+        ImGui.Separator();
         bool dimSection = false;
         for(int index = 0; index < rows.Count; index++) {
             var star = members[index];
@@ -306,7 +381,7 @@ internal static class MultipleStarView {
                 ImGui.Separator();
                 ImGui.TextWrapped($"Fainter than apparent magnitude {ComponentMagnitudeCutoff.ToString("F2", CultureInfo.InvariantCulture)} (check to plot)");
             }
-            if(star.Id != system.Primary.Id) {
+            if(star.Id != system.Primary.Id && !MultipleStarCatalog.HasNoPositionData(star, system)) {
                 ImGui.SetCursorPosX(checkboxX);
                 bool visible = MultipleStarCatalog.IsPlotVisible(star, system.Primary, ComponentMagnitudeCutoff, ComponentVisibility, ExcludeWdsOnly, ExcludeVisual);
                 if(ImGui.Checkbox($"##MultiVisible{star.Id}", ref visible))
@@ -315,27 +390,120 @@ internal static class MultipleStarView {
             }
             float x = startX;
             bool first = true;
-            for(int column = 0; column < row.Length; column++) {
+            foreach(int column in columns) {
                 if(row[column].Length > 0) {
                     if(!first)
                         ImGui.SameLine();
                     ImGui.SetCursorPosX(x);
+#if DEBUG
+                    ImGui.AlignTextToFramePadding();
+#endif
                     ImGui.Text(row[column]);
+#if DEBUG
+                    if(column == 0) {
+                        ImGui.SameLine();
+                        ImGui.SetCursorPosX(x + componentTextWidth + ImGui.GetStyle().ItemSpacing.X);
+                        DrawComponentReview(system, star, reviewWidth);
+                    }
+#endif
                     first = false;
                 }
                 if(widths[column] > 0)
                     x += widths[column] + spacing;
             }
+#if DEBUG
+            DrawComponentReviewNotes(system, star, startX);
+#endif
         }
         if(unlisted.Length > 0)
-            ImGui.TextWrapped($"Components not listed becuase contain no ra/dec, or rho values: {string.Join(", ", unlisted.Select(star => star.Label))}");
+            ImGui.TextWrapped($"Components without position data (no RA/Dec or rho) are shown above without a plotted position: {string.Join(", ", unlisted.Select(star => star.Label))}");
         ImGui.Separator();
-        ImGui.Text("rho:  angular separation (arcseconds)");
-        ImGui.Text("theta: postion angle (deg)");
+        ImGui.Text($"{(rho == "rho" ? "" : rho + " / ")}rho:  angular separation (arcseconds)");
+        ImGui.Text($"{(theta == "theta" ? "" : theta + " / ")}theta: position angle (deg)");
+        ImGui.Text("rel PM: relative proper motion (mas/year); magnitude of both axes, or the available axis; U = undetermined");
         if(members.Any(star => star.IsWdsPosition))
             ImGui.Text("* = WDS only sourced entry");
         DrawPlot(system);
     }
+
+#if DEBUG
+    private static bool SaveComponentReview(MultipleStarCatalog.System system, MultipleStarCatalog.Star star,
+        string desiredType, string notes) {
+        try {
+            _catalog!.SetComponentReview(system.Primary.Id, star.Id, desiredType, notes);
+            ReviewErrors.Remove(star.Id);
+            FailedReviews.Remove(star.Id);
+            return true;
+        } catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException) {
+            ReviewErrors[star.Id] = $"Could not save component {star.Label} review: {ex.Message}";
+            FailedReviews[star.Id] = new(desiredType, notes);
+            Console.WriteLine($"OhMyStars: {ReviewErrors[star.Id]}");
+            return false;
+        }
+    }
+
+    private static void DrawComponentReview(MultipleStarCatalog.System system, MultipleStarCatalog.Star star, float width) {
+        var review = _catalog!.GetComponentReview(star.Id);
+        string desiredType = review?.DesiredType ?? star.Role;
+        bool showNotes = ShowReviewNotes.Contains(star.Id) || !string.IsNullOrEmpty(review?.Notes);
+        ImGui.SetNextItemWidth(width - ImGui.GetFrameHeight() - ImGui.GetStyle().ItemSpacing.X);
+        string preview = desiredType switch {
+            "U" => "U - Unknown", "unlink" => "Unlink",
+            _ => MultipleStarCatalog.ComponentReviewTypes.First(option => option.Type == desiredType).Label
+        };
+        if(ImGui.BeginCombo($"##MultiReviewType{star.Id}", preview)) {
+            foreach(var (type, label) in MultipleStarCatalog.ComponentReviewTypes) {
+                if(ImGui.Selectable(label, desiredType == type)) {
+                    string notes = showNotes && ReviewNotes.TryGetValue(star.Id, out var buffer)
+                        ? buffer.Value.ToString() : review?.Notes ?? "";
+                    if(SaveComponentReview(system, star, type, notes))
+                        desiredType = type;
+                }
+            }
+            ImGui.EndCombo();
+        }
+        if(ImGui.IsItemHovered())
+            ConsoleWidgets.Tooltip("Developer request for later catalog import only. Select the original type to cancel a type change. Remove / unlink detaches this star from this system, not from the catalog.");
+        ImGui.SameLine();
+        bool notesChecked = showNotes;
+        if(ImGui.Checkbox($"##MultiReviewNotesEnabled{star.Id}", ref notesChecked)) {
+            if(notesChecked) {
+                ShowReviewNotes.Add(star.Id);
+            } else if(SaveComponentReview(system, star, desiredType, "")) {
+                ShowReviewNotes.Remove(star.Id);
+                ReviewNotes.Remove(star.Id);
+            }
+        }
+        if(ImGui.IsItemHovered())
+            ConsoleWidgets.Tooltip("Add a catalog correction note. Uncheck to clear the saved note.");
+    }
+
+    private static void DrawComponentReviewNotes(MultipleStarCatalog.System system, MultipleStarCatalog.Star star, float x) {
+        var review = _catalog!.GetComponentReview(star.Id);
+        if(ShowReviewNotes.Contains(star.Id) || !string.IsNullOrEmpty(review?.Notes)) {
+            if(!ReviewNotes.TryGetValue(star.Id, out var buffer)) {
+                string notes = review?.Notes ?? "";
+                buffer = new ImInputString(Math.Max(4096, System.Text.Encoding.UTF8.GetByteCount(notes) + 1024));
+                buffer.SetValue(notes.AsSpan());
+                ReviewNotes.Add(star.Id, buffer);
+            }
+            ImGui.SetCursorPosX(x);
+            ImGui.SetNextItemWidth(Math.Max(100, ImGui.GetContentRegionAvail().X));
+            if(ImGui.InputText(new ImString($"##MultiReviewNotes{star.Id}"), buffer))
+                SaveComponentReview(system, star, review?.DesiredType ?? star.Role, buffer.Value.ToString());
+        }
+        if(ReviewErrors.TryGetValue(star.Id, out string? error)) {
+            ImGui.TextWrapped(error);
+            if(ImGui.SmallButton($"Retry save##MultiReviewRetry{star.Id}")) {
+                var failed = FailedReviews[star.Id];
+                if(SaveComponentReview(system, star, failed.DesiredType, failed.Notes) && failed.Notes.Length == 0) {
+                    ShowReviewNotes.Remove(star.Id);
+                    ReviewNotes.Remove(star.Id);
+                }
+            }
+        }
+    }
+#endif
 
     private static void ResetPlot() {
         _zoom = 1;
@@ -423,11 +591,15 @@ internal static class MultipleStarView {
         ImColor8 grid = new(90, 100, 115, 180);
         ImDrawListExtensions.AddLine(draw, new float2(center.X, origin.Y + 12), new float2(center.X, origin.Y + size - 12), grid, 1f);
         ImDrawListExtensions.AddLine(draw, new float2(origin.X + 12, center.Y), new float2(origin.X + size - 12, center.Y), grid, 1f);
-        foreach(var curve in curves) {
+        var projectedCurves = curves.Select(curve => (curve.Companion,
+            Points: curve.Points.Select(point => {
+                var projected = MultipleStarCatalog.PlotPosition(point, extent, size, _zoom, pan);
+                return new MultipleStarCatalog.Offset((float)projected.East, (float)projected.North);
+            }).ToArray())).ToArray();
+        foreach(var curve in projectedCurves) {
             float2? previous = null;
             foreach(var point in curve.Points) {
-                var projected = MultipleStarCatalog.PlotPosition(point, extent, size, _zoom, pan);
-                float2 current = origin + new float2((float)projected.East, (float)projected.North);
+                float2 current = origin + new float2((float)point.East, (float)point.North);
                 if(previous is float2 start)
                     ImDrawListExtensions.AddLine(draw, start, current, new ImColor8(100, 170, 210, 150), 1f);
                 previous = current;
@@ -464,7 +636,24 @@ internal static class MultipleStarView {
             ImDrawListExtensions.AddText(draw, origin + new float2(labels[i].X, labels[i].Y),
                 new ImColor8(240, 240, 240, 255), item.Star.Label);
         }
+        if(MultipleStarCatalog.PlotScaleBar(extent, size, _zoom) is { } scaleBar) {
+            string scaleLabel = $"{scaleBar.Arcseconds.ToString("G", CultureInfo.InvariantCulture)} " +
+                (scaleBar.Arcseconds == 1 ? "arcsecond" : "arcseconds");
+            float2 labelSize = ImGui.CalcTextSize(scaleLabel);
+            float2 scaleOrigin = origin + new float2(12, size - labelSize.Y - 22);
+            float2 start = scaleOrigin + new float2(0, 4);
+            float2 end = start + new float2((float)scaleBar.Pixels, 0);
+            ImColor8 scaleColor = new(220, 225, 235, 255);
+            ImDrawListExtensions.AddLine(draw, start, end, scaleColor, 1f);
+            ImDrawListExtensions.AddLine(draw, start - new float2(0, 4), start + new float2(0, 4), scaleColor, 1f);
+            ImDrawListExtensions.AddLine(draw, end - new float2(0, 4), end + new float2(0, 4), scaleColor, 1f);
+            ImDrawListExtensions.AddText(draw, scaleOrigin + new float2(0, 12), scaleColor, scaleLabel);
+        }
         ImDrawListExtensions.PopClipRect(draw);
+        if(plotted.Any(item => projectedCurves.Any(curve => curve.Companion == item.Star.Label &&
+            !MultipleStarOrbits.TouchesCurve(new(item.Point.X - origin.X, item.Point.Y - origin.Y),
+                item.Radius, curve.Points))))
+            ImGui.TextWrapped("* some orbit data and observed location data disagree");
         ConsoleWidgets.BeginRow("Plot zoom");
         ConsoleWidgets.SliderFloat("MultiPlotZoom", ref _zoom, 1f, 10f,
             $"{_zoom.ToString("F1", CultureInfo.InvariantCulture)}x", pending: false);
@@ -527,7 +716,13 @@ internal static class MultipleStarView {
                 screenCenter.X, screenCenter.Y, viewportSize.Y, RingRadiusPercent))
                 continue;
             Targets.Add(new(id, screen.X, screen.Y));
-            ImColor8 color = _selected == id ? new(0, 255, 140, 255) : new(120, 200, 255, 190);
+            ImColor8 color = new(120, 200, 255, 190);
+#if DEBUG
+            if(_catalog.DefinitivelyCorrectPrimaries.Contains(id))
+                color = new(0, 255, 0, 255);
+#endif
+            if(_selected == id)
+                color = new(255, 255, 0, 255);
             ImDrawListExtensions.AddCircle(draw, screen, RingRadius, new ImColor8(0, 0, 0, 180), 0, 3f);
             ImDrawListExtensions.AddCircle(draw, screen, RingRadius, color, 0, 1f);
         }

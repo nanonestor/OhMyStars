@@ -13,8 +13,19 @@ internal static class Validation
     {
         string source = Path.Combine(root, "AT-HYG_40", "athyg_40.csv");
         string catalog = Path.Combine(output, "oms_catalog.csv");
+        string reviews = Path.Combine(output, "definitively-correct-systems.csv");
+        int reviewedSystems = File.Exists(reviews)
+            ? OhMyStars.MultipleStarCatalog.Load(catalog, reviews).DefinitivelyCorrectPrimaries.Count : 0;
         var orbitalCompanions = OrbitalClassification.Companions(catalog, Path.Combine(output, "orb6orbits.txt"),
             Path.Combine(root, "WDS", "wds_precise.txt"));
+        var userReviews = new Dictionary<(string Wds, string Label), (long ComponentId, string Desired)>();
+        string userReviewsPath = Path.Combine(output, "user-component-reviews.csv");
+        if (File.Exists(userReviewsPath))
+            foreach (string line in File.ReadLines(userReviewsPath).Skip(1))
+            {
+                string[] r = Csv.Parse(line);
+                userReviews[(r[1], r[3])] = (long.Parse(r[2], Program.Invariant), r[5]);
+            }
         string[] sourceHeader = Csv.Parse(File.ReadLines(source).First());
         string[] header = Csv.Parse(File.ReadLines(catalog).First());
         var columns = header.Select((name, index) => (name, index)).ToDictionary(p => p.name, p => p.index);
@@ -138,6 +149,15 @@ internal static class Validation
             list.Add(p);
         }
         Require(parsedPairs.Values.Sum(l => l.Count) == measures.Count, "unresolved source measurement");
+        long wdsSpectral = 0, filledAthygSpectral = 0;
+        foreach (var row in identities.Values.Where(row => Get(row, "spect_src") == "WDS"))
+        {
+            Require(parsedPairs.TryGetValue(Get(row, "wds_id"), out var pairs), "WDS spectrum lacks source system");
+            string[] types = pairs!.Select(p => p.SpectralFor(Get(row, "component_label"))).OfType<string>()
+                .Distinct(StringComparer.Ordinal).ToArray();
+            Require(types.Length == 1 && types[0] == Get(row, "spect"), "WDS spectrum lacks unambiguous individual-component evidence");
+            wdsSpectral++;
+        }
         foreach (var members in systems.Values)
         {
             string[] anchor = identities[long.Parse(Get(identities[members.Values.First()], "primary_oms_id"), Program.Invariant)];
@@ -161,6 +181,16 @@ internal static class Validation
         foreach (var (wds, members) in systems)
         {
             Require(parsedPairs.TryGetValue(wds, out var pairs), "system lacks relationships");
+            if (wds == "14396-6050")
+            {
+                Require(members.Count == 3 &&
+                    members.TryGetValue("A", out long a) && Get(identities[a], "id") == "1455072" &&
+                    Get(identities[a], "component") == "P" &&
+                    members.TryGetValue("B", out long b) && Get(identities[b], "id") == "1455030" &&
+                    Get(identities[b], "component") == "C" &&
+                    members.TryGetValue("C", out long c) && Get(identities[c], "id") == "1440825" &&
+                    Get(identities[c], "component") == "C", "incorrect Alpha Centauri A/B/C identities");
+            }
             // A retained star can have role evidence from a pair omitted because its other endpoint conflicts.
             Pair[] evidence = classificationPairs[wds]
                 .Where(p => !excludedEndpoints.Contains((p.Wds, p.First, p.Second))).ToArray();
@@ -196,13 +226,24 @@ internal static class Validation
                 string expected;
                 if (unknown.Contains(label)) expected = "U";
                 else if (id == primaryId) expected = "P";
+                else if (userReviews.TryGetValue((wds, label), out var userReview))
+                {
+                    Require(userReview.ComponentId == id, "user review identity mismatch for OMS " + id);
+                    expected = userReview.Desired;
+                }
+                else if (Builder.IsCuratedVisualCompanion(wds, label)) expected = "V";
                 else if (Builder.IsCuratedPhysicalCompanion(wds, label)) expected = "C";
-                else if (orbitalCompanions.Contains(id)) expected = "C";
                 else
                 {
                     var own = Builder.EffectiveMotion(Program.Number(Get(row, "pmra")), Program.Number(Get(row, "pmdec")), label, pairs!);
                     var main = Builder.EffectiveMotion(Program.Number(Get(primary!, "pmra")), Program.Number(Get(primary!, "pmdec")), Get(primary!, "component_label"), pairs!);
-                    expected = questionable.Contains(label) ? "Q" :
+                    double? velocity = Builder.RelativeTangentialVelocityKms(own.Ra, own.Dec, main.Ra, main.Dec,
+                        Program.Number(Get(primary!, "dist")), Program.Number(Get(row, "dist")));
+                    if (velocity is > 75.0) expected = "V";
+                    else if (Builder.SeparationFromPrimary(pairs!, hierarchy.Leaves,
+                                 Get(primary!, "component_label"), label) is < 10.0) expected = "C";
+                    else if (orbitalCompanions.Contains(id)) expected = "C";
+                    else expected = questionable.Contains(label) ? "Q" :
                         visual.Contains(label) ? physical.Contains(label) ? "Q" : "V" :
                         Builder.IsExtremeMotionDifference(own.Ra, own.Dec, main.Ra, main.Dec) ? "Q" : "C";
                 }
@@ -226,9 +267,15 @@ internal static class Validation
                 baseRows++;
             }
             if (!selectedSource.TryGetValue(id, out var copy)) continue;
+            int spectColumn = Array.IndexOf(sourceHeader, "spect");
+            int spectSourceColumn = Array.IndexOf(sourceHeader, "spect_src");
+            bool filledSpectral = Pair.MissingSpectral(original[spectColumn]) &&
+                !Pair.MissingSpectral(copy[spectColumn]) && copy[spectSourceColumn] == "WDS";
+            if (filledSpectral) filledAthygSpectral++;
             for (int i = 0; i < original.Length; i++)
             {
                 if (copy[i] == original[i]) continue;
+                if (filledSpectral && (i == spectColumn || i == spectSourceColumn)) continue;
                 Require(original[i] == "" && Builder.IdentifierColumns.Contains(sourceHeader[i]) &&
                     additions.TryGetValue(("AT40:" + id, sourceHeader[i]), out var audit) &&
                     audit.Value == copy[i] && audit.Evidence.Length > 0, "overwritten nonempty or unaudited AT-HYG field " + id + ":" + sourceHeader[i]);
@@ -268,12 +315,17 @@ internal static class Validation
         {
             status = "passed_structural_and_source_precedence_checks", rows = count,
             athyg_rows_verified = checkedSource, base_athyg_rows_verified = baseRows,
-            original_nonempty_athyg_fields_preserved = true, added_ids_on_athyg_rows = addedSourceIds,
+            original_nonempty_athyg_fields_preserved_except_missing_spectral_metadata = true,
+            added_ids_on_athyg_rows = addedSourceIds,
+            spectral_provenance_updated_only_for_missing_spectra = true,
+            wds_spectral_classifications = wdsSpectral, wds_spectral_filled_athyg = filledAthygSpectral,
             identifier_additions = additions.Count, wds_only_rows = wdsOnly, unknown_position_rows = missingPositions,
             pair_measurements = measures.Count, bds_identified_systems = bdsSystems, roles, review_rows = reviewCount,
-            catalog_sha256 = hash, shared_gaia_ids_allowed = true, scientific_identity_review_required = true
+            catalog_sha256 = hash, shared_gaia_ids_allowed = true, scientific_identity_review_required = true,
+            definitively_correct_systems = reviewedSystems
         });
-        Console.WriteLine($"Verified {count:N0} rows, all {baseRows:N0} base stars, {checkedSource:N0} AT-HYG rows with nonempty fields preserved, {wdsOnly:N0} WDS-only rows.");
+        Console.WriteLine($"Verified {count:N0} rows, all {baseRows:N0} base stars, {checkedSource:N0} AT-HYG rows with known fields preserved, {wdsOnly:N0} WDS-only rows.");
+        Console.WriteLine($"Verified {wdsSpectral:N0} component-specific WDS spectra, including {filledAthygSpectral:N0} AT-HYG gap fills.");
         Console.WriteLine($"Verified {measures.Count:N0} scalar relationships/measurements, hierarchy leaves, plain WDS IDs, Visual vector threshold, ID audit, registry and review policies.");
     }
 

@@ -9,7 +9,11 @@ using static KSA.Rendering.Lighting.CascadedShadowSystem;
 namespace OhMyStars;
 
 internal unsafe static class StellariumRenderer {
-    private const double StarDistance = 19.5d;
+    internal const double StarDistance = 19.5d;
+
+    // While set, overlay projections target a secondary game viewport (the
+    // telescope view) instead of the main ImGui viewport.
+    internal static float2? OverlayOffsetOverride;
 
     public static bool showIAUConstellations = false;
     public static bool showStarNames = false;
@@ -58,6 +62,8 @@ internal unsafe static class StellariumRenderer {
 
     public static float2 EgoToOverlayScreen(Camera camera, double3 position) {
         float2 screen = camera.EgoToScreen(position);
+        if(OverlayOffsetOverride is float2 offset)
+            return screen + offset;
         ImGuiViewport* viewport = ImGui.GetMainViewport();
 
         return viewport == null
@@ -93,6 +99,19 @@ internal unsafe static class StellariumRenderer {
         if(draw_list == null)
             return;
 
+        DrawOverlaySet(draw_list.Value, camera, viewport->Pos, viewport->Size, interactive: true);
+
+        ImGui.End();
+
+        StarPicker.DrawWindows();
+    }
+
+    // The shared sky-overlay pass, drawn over the main view every frame and
+    // reused by the telescope viewport (TelescopeView) with its own camera
+    // and screen offset. Interactive extras (star pointer, navball marker,
+    // mouse picking) only run on the main view.
+    internal static void DrawOverlaySet(ImDrawListPtr drawList, Camera camera, float2 labelOrigin,
+        float2 labelSize, bool interactive) {
         IParentBody? occluderRoot = GetOccluderRoot(camera.Following);
         if(occluderRoot is null) {
             celestialOccluders.Clear();
@@ -105,37 +124,39 @@ internal unsafe static class StellariumRenderer {
         double3 center = double3.Zero;
         double radius = StarDistance;
 
-        SkyLabelRenderer.Begin(viewport->Pos, viewport->Size);
-        SkyMarkingsRenderer.Draw(draw_list.Value, camera, center, radius);
-        SkyCulturesRenderer.Draw(draw_list.Value, camera, center, radius, showAsterisms, showAsterismNames, showStarNames);
+        SkyLabelRenderer.Begin(labelOrigin, labelSize);
+        SkyMarkingsRenderer.Draw(drawList, camera, center, radius);
+        SkyCulturesRenderer.Draw(drawList, camera, center, radius, showAsterisms, showAsterismNames, showStarNames);
         if(filterBySpectral)
-            SkyCulturesRenderer.DrawSpectralTypes(draw_list.Value, camera, center, radius, spectralTypeMask, spectralDistanceLightYears);
-        SkyCulturesRenderer.DrawSelectedDropdownStarName(draw_list.Value, camera, center, radius);
+            SkyCulturesRenderer.DrawSpectralTypes(drawList, camera, center, radius, spectralTypeMask, spectralDistanceLightYears);
+        SkyCulturesRenderer.DrawSelectedDropdownStarName(drawList, camera, center, radius);
 
         if(showIAUConstellations)
-            IAUConstellationsRenderer.Draw(draw_list.Value, camera, center, radius);
+            IAUConstellationsRenderer.Draw(drawList, camera, center, radius);
 
-        DrawStarPointer(draw_list.Value, camera, radius);
+        if(interactive) {
+            DrawStarPointer(drawList, camera, radius);
+            NavballMarkerRenderer.Draw();
+        }
 
-        NavballMarkerRenderer.Draw();
-
-        MultipleStarView.DrawOverlay(draw_list.Value, camera, center, radius);
-        StarPicker.UpdateOverlay(draw_list.Value, camera, center, radius);
-        SkyLabelRenderer.Draw(draw_list.Value);
-
-        ImGui.End();
-
-        StarPicker.DrawWindows();
+        MultipleStarView.DrawOverlay(drawList, camera, center, radius);
+        DeepSkyView.DrawOverlay(drawList, camera, center, radius);
+        if(interactive)
+            StarPicker.UpdateOverlay(drawList, camera, center, radius);
+        SkyLabelRenderer.Draw(drawList);
     }
 
     private static void DrawStarPointer(ImDrawListPtr drawList, Camera camera, double radius) {
-        if(!OhMyStarsWindow.TryGetStarPointer(out int hip, out float2 windowPosition, out float2 windowSize))
+        if(!OhMyStarsWindow.TryGetStarPointer(out int hip, out double3? catalogDirection,
+            out float2 windowPosition, out float2 windowSize))
             return;
 
         double3 position;
         // Stars that exist as real game bodies (Sol, Alpha Centauri, Barnard's Star, Tau Ceti, ...) are
         // targeted at their actual in-game position rather than the catalog sky direction.
-        if(SkyCulturesRenderer.TryGetGameBodyEgo(hip, camera, out double3 bodyEgo)) {
+        if(catalogDirection is double3 skyDirection) {
+            position = ApplyAlignment(skyDirection) * radius;
+        } else if(SkyCulturesRenderer.TryGetGameBodyEgo(hip, camera, out double3 bodyEgo)) {
             position = bodyEgo;
         } else if(SkyCulturesRenderer.IsCentralStar(hip) && !GameStarSpace.IsObserverOutsideSolarSystem(camera)) {
             return;

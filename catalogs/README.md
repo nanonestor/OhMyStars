@@ -1,4 +1,15 @@
-# Oh My Stars curated catalog (test revision 22, identity-first trial)
+# Oh My Stars curated catalog (test revision 23, identity-first trial)
+
+## Deep sky catalog
+
+The new **Deep Sky** tab uses a separate, bundled, unmodified
+[OpenNGC snapshot](OpenNGC/README.md): 13,969 NGC/IC records plus 64 addendum
+records, including M40 and M45. It does not change the curated star catalog
+or generated star binaries. Search, per-type ring controls, magnitude policy,
+cross-identifiers, source acknowledgments and CC BY-SA 4.0 licensing are
+documented in [OpenNGC/README.md](OpenNGC/README.md).
+
+## Curated star catalog
 
 [oms_catalog.csv](oms_catalog.csv) is a modified and supplemented **AT-HYG 4.0
 CSV**, with one row per included individual-star candidate. It is not yet a
@@ -7,6 +18,130 @@ sky overlays and the default binary generator; it no longer ships the old
 reduced AT-HYG CSV. Stars and Multi share stable OMS selection IDs.
 The default binary is regenerated on upgrade with the existing magnitude and
 colour settings, while user-created binaries remain unchanged.
+
+Revision 24 imports the user's full in-game developer review: all 1,236
+pending component requests from `dev\system-review-overrides.csv` (validated
+against revision 23 with zero identity or type mismatches) now live in
+[user-component-reviews.csv](user-component-reviews.csv), which the builder
+applies as the highest-priority component role overrides after P, verified by
+OMS ID and protected from ORB6 promotion. The import also added 7,873 system
+approvals (7,883 total). For unreviewed components, two kinematic rules now
+run before the WDS flag and extreme-motion heuristics: a combined
+proper-motion difference versus the primary above 75 km/s
+(4.740470 x |delta pm| x system distance) classifies V (2,138 components),
+and otherwise a most-recent primary-anchored separation under 10 arcseconds
+classifies C (29,003 components). The validator re-derives every role with
+the same rules. Further manual review is paused until a Gaia DR4-based
+source update improves proper motions.
+
+Revision 23 applies the user's component review for Procyon, Sirius, Delta
+Cephei, Almaaz, Spica, Polaris, Gliese 667A, Capella, Mizar and HD 98800.
+The primary retains P; scoped C/V overrides take precedence over automatic
+motion/optical classification and ORB6 promotion. HD 98800 is OMS 160137,
+not unrelated OMS 160139, as confirmed by the user. Capella O/P are omitted
+at the user's request, with their OMS IDs reserved; their proposed identity
+as duplicates of H/L has not been independently established. Other source
+fields and retained WDS measurements are unchanged.
+
+### Developer review markers
+
+[definitively-correct-systems.csv](definitively-correct-systems.csv) keeps the
+user-declared definitive primary OMS IDs, paired with WDS IDs to detect stale
+or incorrect identities. It is review metadata, not an independent scientific
+certification. Component corrections themselves belong in the builder's
+scoped curated rules and [oms-notes.txt](oms-notes.txt); editing this list alone
+does not change C/V classifications.
+
+In **Debug** builds, reviewed primaries have bright-green background highlight
+rings when not selected, and selecting one displays green
+**Definitively correct** text at the top-right of the Multi tab. Existing ring
+and component filters still apply. The currently selected primary's background
+ring is yellow, taking precedence over review green. Unselected, unreviewed
+rings retain their ordinary light-blue color.
+
+The top of Multi offers **Approve as correct** for an unapproved selected
+primary, or **Undo approval** for an approved one. Changes update the green
+indicators immediately and persist across restarts. No pending count is shown.
+These buttons do not change component types or associations. Save failures
+are displayed in Multi and logged, without changing the displayed approval.
+
+Each component row also has a developer dropdown after its component name /
+relationship text, followed by a notes checkbox. The dropdown offers **S -
+Single**, **P - Primary**, **C - Companion**, **V - Visual**, **Q - Visual ?**,
+**U - Relationship Unknown**, and **Remove / unlink**. It initially shows the
+catalog's current type, then the saved requested type. Removal requests unlink
+the star from this multi system; they do not request deletion of the star's
+catalog identity. These are requests for later curation, not immediate changes
+to catalog types, displayed relationship text, filtering, plots or membership.
+Components lacking position data get review controls below the normal listing
+in Debug too; ordinary component filters still apply.
+
+Check the box after the dropdown to show a text field below the component row.
+Notes save as you type, on the same CSV row as that component's requested type.
+Unchecking clears the saved note. Notes may also be recorded without changing
+the type. Selecting the original type and clearing its note cancels that
+component's pending request. Save failures are displayed beside the component
+and logged; a **Retry save** button retries the failed request. Saved selections
+and nonempty notes reload on restart. System approval remains independent: use
+**Approve as correct** once the system is correct *with its requested changes*.
+Approving or undoing approval never clears component requests.
+
+Runtime edits are stored in `dev\system-review-overrides.csv` under the
+**loaded mod's folder**, separately from the shipped list. The CSV columns are
+`primary_oms_id,wds_id,name,approved,component_oms_id,component_label,original_type,desired_type,notes`.
+System approval rows record the primary OMS ID, WDS ID, name and `approved`
+(`true` or `false`), leaving component fields empty. Component rows share the
+primary identity, leave `approved` empty, and record the component's stable OMS
+ID, current label/type, requested type (or `unlink`) and optional notes.
+There is at most one approval row per primary and one request row per
+component; later edits replace the corresponding row, not append duplicates.
+CSV quoting preserves commas, quotes and multiline notes. Old four-column
+approval CSVs still load and are migrated on the next successful save.
+Component identity, original label/type and primary WDS mismatches fail
+explicitly rather than applying a request to an unexpected star.
+Local decisions override the shipped list, including undoing an existing
+approval. This developer file is not packaged or overwritten by builds and is
+not deleted when switching to Release.
+
+When ready, ask the assistant to **apply my developer CSV / component reviews**,
+or **import my system approvals** for approvals alone. For component reviews,
+validate each primary OMS/WDS identity, component OMS ID, original label and
+original type against the current catalog. Apply the explicit requests to the
+builder's scoped curated rules, preserving stable IDs and unaffected source
+data; unlink requests remove the system association, not the catalog star.
+Check primary/single-role changes for valid resulting system structure rather
+than blindly changing one role. Apply pending component requests even when
+their system was previously approved; approval does not suppress corrections.
+Record each applied catalog correction in [oms-notes.txt](oms-notes.txt), with
+a brief explanation such as "User developer review: component B changed from
+V to C", including any additional supplied component notes. Regenerate and
+validate the catalog and its related artifacts as for other curated changes.
+Do not write pending requests into the catalog or notes file during gameplay.
+
+For system approvals, compare the local overrides with the repository list:
+validate each OMS/WDS identity, add `true` rows and remove `false` rows in
+`catalogs\definitively-correct-systems.csv`, retaining existing unaffected
+rows. Report the changes, then clear only the imported local rows after
+the source update and refreshed Debug deployment have succeeded, so the new
+shipped baseline preserves the decisions after restart. Leave unprocessed rows
+and all new edits intact. Later imports read the changes made since that
+acknowledgement; no import or acknowledgement happens automatically.
+If the mod was loaded from another instance folder, use that instance's
+`dev\system-review-overrides.csv`, not an assumed installation path.
+
+**Release** builds compile out the buttons, component review controls,
+override loading/saving and both
+indicators, do not load or ship the review
+list, and remove a stale deployed copy. The source list remains available for
+future catalog work. The default star binary version is advanced to remove
+the suppressed Capella entries on next launch; user-created binaries are not
+rewritten.
+
+Run the focused review regression checks with
+`dotnet run --project tools\MultiTests -- catalogs\oms_catalog.csv --reviewed-systems-only`
+from the repository root. This checks all ten identities and assignments,
+Capella's suppressed entries and reserved IDs, and the unchanged nearby OMS
+160139 system, in addition to the synthetic Multi fixtures.
 
 Revision 22 restricts automatic motion-only Q classification to extreme
 discrepancies: the companion-minus-primary motion vector magnitude must be
@@ -130,9 +265,15 @@ Multi plots all component roles with usable geometry; unresolved
 group locations are approximated by their primary/leading individual leaf
 for display only, without altering catalog measurements.
 
-This build preserves original nonempty AT-HYG fields verbatim, supplementing
-blank identifier fields only with documented cross-reference evidence. WDS
-information never overwrites conflicting AT-HYG values. WDS-only additions have blank AT-HYG IDs
+This build preserves known AT-HYG fields verbatim, supplementing blank identifier
+fields only with documented cross-reference evidence. Missing spectral classifications
+(blank, `unknown`, `U`, `?`, `.` or `...`) may also be filled from WDS columns 71-79,
+with `spect_src=WDS` replacing the old missing-spectrum provenance. Known AT-HYG
+spectra and their provenance always win. A single WDS type applies only to the
+first pair endpoint; a simple `+` separates first/second component types. Slash
+qualifiers are retained, not split. Only exact individual endpoints are used:
+group/blended endpoints are not expanded to leaves, and conflicting or complex
+parenthesized spectra are left unassigned. WDS-only additions have blank AT-HYG IDs
 and no invented Gaia ID, distance, absolute magnitude, color, or spectral type.
 Shared Gaia IDs from AT-HYG are retained as supplied, not treated as duplicates
 or reported solely for being shared. OMS and AT-HYG row IDs remain unique.
@@ -147,6 +288,35 @@ per-file limit; choose Git LFS or release-asset/compressed distribution if
 necessary. This builder does not configure LFS or upload data.
 
 ## Files and reproducibility
+
+Alpha Centauri (WDS 14396-6050) uses Rigil Kentaurus as primary A
+(AT-HYG 1455072 / OMS 195683), Toliman as B (AT-HYG 1455030 / OMS 195677),
+and Proxima Centauri as C (AT-HYG 1440825 / OMS 374371).
+The historical SCZ 1 Ca-Cb entry is excluded: the supplied WDS notes explicitly
+say "Not a binary!" This agrees with the
+[three-star system description](https://en.wikipedia.org/wiki/Alpha_Centauri#Physical_properties).
+Existing identities and original AT-HYG fields are retained; duplicate WDS-only
+B/Ca/Cb identities are retired without recycling IDs. For this system the full
+precise WDS separation field is read, preserving AC's 7960.200 arcseconds rather
+than dropping its leading digit. The global parser correction is deferred by
+user choice because it changes other component associations. The default binary
+rebuilds on the next launch.
+
+Iota Cassiopeiae (Huagai, WDS 02291+6724) retains the five physical components
+Aa, Ab, B, Ca and Cb. B uses its distinct STF 262 measurements, not the close
+CHR 6 Ab data. The BC row's repeated system DM is not assigned to B as an
+individual identifier; doing so previously removed B as a duplicate of Aa.
+Ca/Cb are curated physical companions despite the historical optical flag.
+The separate distant D entry is curated optical/Visual (V), outside the physical
+quintuple, following the user's correction. Source measurements, reserved OMS
+identities and the two different supplied orbital solutions are preserved;
+no outer C orbit is invented. See [oms-notes.txt](oms-notes.txt) for the evidence.
+
+The editable [component identity review](component-identity-review.txt) records
+59 other identifier-driven omission events across 58 systems (47 DM-to-HD and
+12 HDS-to-HIP links). These remain unresolved, not automatically restored.
+Add research and explicit decisions there for later scoped catalog corrections;
+the builder does not overwrite or execute that maintained file.
 
 - [oms_catalog.csv](oms_catalog.csv): authoritative star catalog for this draft.
 - [identity-registry.csv](identity-registry.csv): persistent `source_key,oms_id`
@@ -280,7 +450,8 @@ All columns are listed below in file order.
 
 Coordinate frame/equinox and measurement epoch are different concepts. The
 supplied RA/Dec is used in its J2000 frame with **no additional precession**.
-Original provenance fields remain unchanged. A Gaia distance/ID alone does
+Original provenance fields remain unchanged except that filling a missing spectral
+classification from WDS sets `spect_src=WDS`. A Gaia distance/ID alone does
 not certify that a row's RA/Dec was measured by Gaia.
 
 | Column | Meaning and units |
@@ -608,7 +779,9 @@ snapshot, not that excluded records were accepted or scientifically resolved.
    duplicate star rows or renamed B2 aliases for that shared star. Aggregate
    omitted-assignment counts are recorded in the manifest. Unconnected WDS-only
    rows from discarded relationships are removed.
-7. Keep nonempty AT-HYG field values unchanged even when WDS differs.
+7. Keep known AT-HYG field values unchanged even when WDS differs. Missing
+   spectral classifications may be filled from component-specific WDS evidence,
+   updating `spect_src` to `WDS`; known classifications always take precedence.
    WDS-versus-AT-HYG proper-motion differences have no matching threshold
    and do not generate review messages. Classify companions as V by scoped
    definite optical/nonphysical evidence, or as Q by tentative/conflicting

@@ -67,6 +67,16 @@ internal static class Program
         Pair p = Pair.Parse(sample, 1);
         Check(p.Theta == 235.3 && p.Rho == 0.590 && p.Mag1 == 10.27 && p.Mag2 == 11.5, "precise-last offsets");
         Check(p.First == "A" && p.Second == "B", "implicit AB");
+        Check(p.Spectral == "A7IV" && p.SpectralFor("A") == "A7IV" && p.SpectralFor("B") is null,
+            "precise WDS spectral field belongs to first component when unsplit");
+        Check((p with { Spectral = "G8/K1III" }).SpectralFor("A") == "G8/K1III" &&
+            (p with { Spectral = "+M3V" }).SpectralFor("A") is null &&
+            (p with { Spectral = "+M3V" }).SpectralFor("B") == "M3V" &&
+            (p with { Spectral = "G0V+..." }).SpectralFor("B") is null,
+            "spectral qualifiers, missing first type and unknown second type");
+        Check((p with { Spectral = "(DA+M)+M:" }).SpectralFor("A") is null &&
+            (p with { Spectral = "F+G+K" }).SpectralFor("B") is null,
+            "complex composite spectra are not guessed");
         Check(Pair.Endpoints("BC") == ("B", "C"), "BC endpoints");
         Check(Pair.Endpoints("AB,C") == ("AB", "C"), "blended endpoint retained");
         Check(Pair.Endpoints("Aa,Ab") == ("Aa", "Ab"), "case-sensitive endpoints");
@@ -98,6 +108,9 @@ internal static class Program
         Check(Errata.Deleted("06122+5014", "TDS227") && !Errata.Deleted("06122+5014", "OTHER1"), "scoped deletion");
         Check(Errata.Rename("22060+3724", "LDS4940") == "LDS4943", "scoped rename");
         Check(Errata.Rename("22060+3724", "LDS4943") == "LDS4943", "idempotent rename");
+        Check(Errata.Deleted("05167+4600", "HEL1") &&
+            !Errata.Deleted("05167+4600", "ST3") && !Errata.Deleted("05167+4601", "HEL1"),
+            "Capella O/P suppression is scoped, preserving H-L and unrelated HEL1 pairs");
         Check(Pair.NormalizeMotion(12, "P") == 120 && Pair.NormalizeMotion(-3, "P") == -30 &&
             Pair.NormalizeMotion(null, "P") is null && Pair.NormalizeMotion(12, "") == 12, "century motion to mas/year");
         Check(Builder.CompanionPosition(p with { Theta = null }) == (null, null), "missing theta remains unknown");
@@ -147,6 +160,21 @@ internal sealed record Pair(string Wds, string Discoverer, string Components, st
     int? FirstYear, int? LastYear, double? Theta, double? Rho, double? Mag1, double? Mag2,
     string Flags, double? Ra, double? Dec, double? PmRa1, double? PmDec1, double? PmRa2, double? PmDec2, int Line)
 {
+    public string Spectral { get; init; } = "";
+
+    internal static bool MissingSpectral(string value) =>
+        string.IsNullOrWhiteSpace(value) || value.Trim() is "?" or "." or "..." ||
+        value.Equals("unknown", StringComparison.OrdinalIgnoreCase) || value == "U";
+
+    public string? SpectralFor(string label)
+    {
+        // '+' separates component spectra; '/' can instead qualify a single spectral type.
+        string[] types = Spectral.Split('+');
+        if (types.Length > 2 || Spectral.IndexOfAny(['(', ')']) >= 0) return null;
+        string? value = label == First ? types[0] : label == Second && types.Length == 2 ? types[1] : null;
+        return value is null || MissingSpectral(value) ? null : value.Trim();
+    }
+
     public static bool Excluded(string flags) => flags.Contains('X');
     public static bool Visual(string flags) => flags.IndexOfAny(['S', 'U', 'Y']) >= 0;
     internal static double? NormalizeMotion(double? value, string flags) => value * (flags.Contains('P') ? 10 : 1);
@@ -190,7 +218,9 @@ internal sealed record Pair(string Wds, string Discoverer, string Components, st
         }
         if (ra < 0 || ra >= 24 || dec is < -90 or > 90) throw new InvalidDataException($"Invalid WDS position at line {line}.");
         string flags = Program.Slice(text, 107, 4);
-        double? theta = Program.Number(Program.Slice(text, 38, 6)), rho = Program.Number(Program.Slice(text, 46, 7));
+        // Alpha Centauri's wide AC measure needs the leading digit; broader parser changes await review.
+        double? theta = Program.Number(Program.Slice(text, 38, 6)),
+            rho = Program.Number(wds == "14396-6050" ? Program.Slice(text, 45, 8) : Program.Slice(text, 46, 7));
         return new Pair(wds, Program.Compact(Program.Slice(text, 10, 7)), component, first, second,
             (int?)Program.Number(Program.Slice(text, 23, 4)), (int?)Program.Number(Program.Slice(text, 28, 4)),
             theta is >= 0 and <= 360 ? theta : null, rho is > 0 ? rho : null,
@@ -199,7 +229,8 @@ internal sealed record Pair(string Wds, string Discoverer, string Components, st
             NormalizeMotion(Program.Number(Program.Slice(text, 80, 4)), flags),
             NormalizeMotion(Program.Number(Program.Slice(text, 84, 4)), flags),
             NormalizeMotion(Program.Number(Program.Slice(text, 89, 4)), flags),
-            NormalizeMotion(Program.Number(Program.Slice(text, 93, 4)), flags), line);
+            NormalizeMotion(Program.Number(Program.Slice(text, 93, 4)), flags), line)
+            { Spectral = Program.Slice(text, 70, 9) };
     }
     private static double Required(string s) => Program.Number(s) ?? throw new InvalidDataException("Missing required WDS numeric value: " + s);
 }
@@ -265,7 +296,11 @@ internal static class Errata
         "05372-0635|TDS188", "06122+5014|TDS227", "07386-2830|TDS391",
         "08455-2812|TDS491", "08557-0908|TDS502", "09476+1126|TDS555",
         "16293-4428|TDS815", "18440+3216|TDS940", "22103+3845|TDS1161",
-        "23353+1813|TDS1216"
+        "23353+1813|TDS1216",
+        // WDS notes explicitly reject the historical Proxima Ca-Cb detection: "Not a binary!"
+        "14396-6050|SCZ1",
+        // User-requested suppression of Capella O/P; IDs remain reserved.
+        "05167+4600|HEL1"
     };
     // These aliases describe historical corrections; current positions still pass normal identity checks.
     internal static readonly HashSet<string> HistoricalDesignations = new(StringComparer.Ordinal)
@@ -338,6 +373,9 @@ internal sealed partial class Builder(string root, string output)
     private readonly List<string[]> _review = [];
     private readonly Dictionary<string, long> _counts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _registry = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Wds, string Label), (long ComponentId, string Desired)> _userReviews = new();
+    private readonly HashSet<(string Wds, string Label)> _userReviewsApplied = [];
+    private readonly HashSet<long> _lockedRoles = [];
     private string[] _header = [];
     private Dictionary<string, int> _columns = new(StringComparer.Ordinal);
     private long _nextId = 1;
@@ -364,6 +402,7 @@ internal sealed partial class Builder(string root, string output)
     {
         Directory.CreateDirectory(output);
         LoadRegistry();
+        LoadUserReviews();
         LoadNotesAndAliases();
         LoadMatchingIdentities();
         Console.WriteLine("Indexing full AT-HYG 4.0 and selecting magnitude <= 10...");
@@ -395,10 +434,46 @@ internal sealed partial class Builder(string root, string output)
                 Field(almachB.Fields, "hd") != "12534" ||
                 !almach.Members.TryGetValue("C", out var almachC) || almachC.AthygId.HasValue))
             throw new InvalidDataException("Curated Almach representative association failed its source-identity check.");
+        if (_systems.SingleOrDefault(s => s.Wds == "02291+6724") is { } iotaCas &&
+            (!iotaCas.Members.TryGetValue("Aa", out var iotaAa) || iotaAa.AthygId != 188568 ||
+                !iotaCas.Members.ContainsKey("Ab") || !iotaCas.Members.TryGetValue("B", out var iotaB) ||
+                iotaB.AthygId.HasValue || Field(iotaB.Fields, "hd").Length > 0 ||
+                !iotaCas.Members.ContainsKey("Ca") || !iotaCas.Members.ContainsKey("Cb")))
+            throw new InvalidDataException("Curated Iota Cassiopeiae component identities failed their source checks.");
         EnrichIdentifiers();
+        if (_systems.SingleOrDefault(s => s.Wds == "14396-6050") is { } alphaCen &&
+            (alphaCen.Members.Count != 3 ||
+                !alphaCen.Members.TryGetValue("A", out var alphaA) || alphaA.AthygId != 1455072 ||
+                Field(alphaA.Fields, "proper") != "Rigil Kentaurus" ||
+                !alphaCen.Members.TryGetValue("B", out var alphaB) || alphaB.AthygId != 1455030 ||
+                Field(alphaB.Fields, "proper") != "Toliman" ||
+                !alphaCen.Members.TryGetValue("C", out var alphaC) || alphaC.AthygId != 1440825 ||
+                Field(alphaC.Fields, "proper") != "Proxima Centauri"))
+            throw new InvalidDataException("Curated Alpha Centauri component identities failed their source checks.");
+        EnrichSpectralTypes();
         Validate();
         WriteOutputs();
         Console.WriteLine(Program.Json(_counts));
+    }
+
+    private void EnrichSpectralTypes()
+    {
+        foreach (var system in _systems)
+            foreach (var (label, star) in system.Members)
+            {
+                if (!Pair.MissingSpectral(Field(star.Fields, "spect"))) continue;
+                string[] types = system.Pairs.Select(p => p.SpectralFor(label)).OfType<string>()
+                    .Distinct(StringComparer.Ordinal).ToArray();
+                if (types.Length > 1)
+                {
+                    Count("wds_spectral_conflicts_skipped");
+                    continue;
+                }
+                if (types.Length == 0) continue;
+                star.Fields[_columns["spect"]] = types[0];
+                star.Fields[_columns["spect_src"]] = "WDS";
+                Count(star.AthygId.HasValue ? "wds_spectral_filled_athyg" : "wds_spectral_filled_wds_only");
+            }
     }
 
     private void LoadRegistry()
@@ -423,7 +498,7 @@ internal sealed partial class Builder(string root, string output)
         {
             _header = header;
             _columns = header.Select((h, i) => (h, i)).ToDictionary(p => p.h, p => p.i, StringComparer.Ordinal);
-            foreach (string required in new[] { "id","ra","dec","mag","gaia","pmra","pmdec","hd","pos_src","dist","ci" })
+            foreach (string required in new[] { "id","ra","dec","mag","gaia","pmra","pmdec","hd","pos_src","dist","ci","spect","spect_src" })
                 if (!_columns.ContainsKey(required)) throw new InvalidDataException("Missing AT-HYG column " + required);
         }
         else if (!header.SequenceEqual(_header)) throw new InvalidDataException("AT-HYG header changed during build.");
@@ -725,6 +800,14 @@ internal sealed partial class Builder(string root, string output)
             matches = [identified];
             Count("identity_first_component_matches");
         }
+        if (system.Wds == "14396-6050" && label is "A" or "B" or "C")
+        {
+            // LDS 494's Proxima alias names C, not its first endpoint A.
+            matches = [_index.Stars.Single(c => c.Id == (label switch {
+                "A" => 1455072, "B" => 1455030, _ => 1440825
+            }))];
+            Count("curated_alpha_centauri_identity_matches");
+        }
         if (system.Wds == "02039+4220" && label is "A" or "B" or "C")
         {
             // HD 12534 is the user-approved BC representative, not proof of resolved B photometry.
@@ -1012,19 +1095,123 @@ internal sealed partial class Builder(string root, string output)
         if (star.System is null) return star.ClassificationUnknown ? "U" : "S";
         if (star.System.UnknownLabels.Contains(star.Component)) return "U";
         if (star.System.Primary == star) return "P";
+        if (_userReviews.TryGetValue((star.System.Wds, star.Component), out var userReview))
+        {
+            if (userReview.ComponentId != star.OmsId)
+                throw new InvalidDataException($"User review identity mismatch for {star.System.Wds} {star.Component}: " +
+                    $"review OMS {userReview.ComponentId} versus catalog OMS {star.OmsId}");
+            _userReviewsApplied.Add((star.System.Wds, star.Component));
+            _lockedRoles.Add(star.OmsId);
+            Count("user_component_reviews_applied");
+            return userReview.Desired;
+        }
+        if (IsCuratedVisualCompanion(star.System.Wds, star.Component)) return "V";
         if (IsCuratedPhysicalCompanion(star.System.Wds, star.Component)) return "C";
-        if (star.System.QuestionableLabels.Contains(star.Component)) return "Q";
-        if (star.System.VisualLabels.Contains(star.Component))
-            return star.System.PhysicalLabels.Contains(star.Component) ? "Q" : "V";
         Star primary = star.System.Primary;
         var own = EffectiveMotion(Program.Number(Field(star.Fields, "pmra")), Program.Number(Field(star.Fields, "pmdec")), star.Component, star.System.Pairs);
         var main = EffectiveMotion(Program.Number(Field(primary.Fields, "pmra")), Program.Number(Field(primary.Fields, "pmdec")), primary.Component, star.System.Pairs);
+        // User-specified kinematic rules for unreviewed components: a relative
+        // tangential velocity above 75 km/s marks an unbound visual alignment,
+        // and separations under 10 arcseconds are companions otherwise.
+        double? velocity = RelativeTangentialVelocityKms(own.Ra, own.Dec, main.Ra, main.Dec,
+            Program.Number(Field(primary.Fields, "dist")), Program.Number(Field(star.Fields, "dist")));
+        if (velocity is > 75.0)
+        {
+            _lockedRoles.Add(star.OmsId);
+            Count("kinematic_rule_visual");
+            return "V";
+        }
+        if (SeparationFromPrimary(star.System.Pairs, l => star.System.Hierarchy!.Leaves(l),
+                primary.Component, star.Component) is < 10.0)
+        {
+            Count("kinematic_rule_companion");
+            return "C";
+        }
+        if (star.System.QuestionableLabels.Contains(star.Component)) return "Q";
+        if (star.System.VisualLabels.Contains(star.Component))
+            return star.System.PhysicalLabels.Contains(star.Component) ? "Q" : "V";
         return IsExtremeMotionDifference(own.Ra, own.Dec, main.Ra, main.Dec) ? "Q" : "C";
+    }
+
+    // Loads catalogs/user-component-reviews.csv: the user's in-game developer
+    // component reviews, applied as the highest-priority role overrides
+    // (after P) and protected from ORB6 promotion.
+    private void LoadUserReviews()
+    {
+        string path = Path.Combine(output, "user-component-reviews.csv");
+        if (!File.Exists(path)) return;
+        foreach (string line in File.ReadLines(path).Skip(1))
+        {
+            string[] r = Csv.Parse(line);
+            if (r.Length < 7) throw new InvalidDataException("Malformed user component review row: " + line);
+            if (r[5] is not ("S" or "P" or "C" or "V" or "Q" or "U"))
+                throw new InvalidDataException($"Unsupported user review type '{r[5]}' for {r[1]} {r[3]}");
+            _userReviews[(r[1], r[3])] = (long.Parse(r[2], Program.Invariant), r[5]);
+        }
+        Console.WriteLine($"Loaded {_userReviews.Count:N0} user component reviews.");
+    }
+
+    // Relative tangential velocity between a component and its primary from
+    // their proper-motion difference (mas/yr) at the system's distance (pc):
+    // v_t [km/s] = 4.740470 * delta_mu [arcsec/yr] * distance [pc].
+    internal static double? RelativeTangentialVelocityKms(double? ra, double? dec,
+        double? primaryRa, double? primaryDec, double? primaryDistance, double? starDistance)
+    {
+        if (ra is not double r || dec is not double d0 ||
+            primaryRa is not double pr || primaryDec is not double pd) return null;
+        double? distance = primaryDistance is > 0 ? primaryDistance : starDistance;
+        if (distance is not double dist || dist <= 0) return null;
+        double masPerYear = Math.Sqrt((r - pr) * (r - pr) + (d0 - pd) * (d0 - pd));
+        return 4.740470 * (masPerYear / 1000.0) * dist;
+    }
+
+    // Most recent measured separation of a component from the system primary,
+    // using the measurements owned by that component (primary-anchored pairs).
+    internal static double? SeparationFromPrimary(IEnumerable<Pair> pairs,
+        Func<string, string[]> leaves, string primaryLabel, string label)
+    {
+        double? best = null;
+        int bestYear = int.MinValue;
+        foreach (Pair p in pairs)
+        {
+            if (p.Rho is not double rho) continue;
+            string[] second = leaves(p.Second);
+            string[] first = leaves(p.First);
+            if (second.Length == 0 || first.Length == 0 ||
+                second[0] != label || first[0] != primaryLabel) continue;
+            int year = p.LastYear ?? int.MinValue;
+            if (best is null || year > bestYear)
+            {
+                best = rho;
+                bestYear = year;
+            }
+        }
+        return best;
     }
 
     internal static bool IsCuratedPhysicalCompanion(string wds, string label) =>
         (wds == "18443+3940" && label is "B" or "Ca" or "Cb" or "D") ||
-        (wds == "02039+4220" && label is "B" or "C");
+        (wds == "02039+4220" && label is "B" or "C") ||
+        (wds == "02291+6724" && label is "Ab" or "B" or "Ca" or "Cb") ||
+        (wds is "07393+0514" or "06451-1643" && label == "B") ||
+        (wds == "22292+5825" && label == "C") ||
+        (wds == "05167+4600" && label is "Ab" or "H" or "L");
+
+    internal static bool IsCuratedVisualCompanion(string wds, string label) =>
+        (wds, label) switch
+        {
+            ("02291+6724", "D") => true,
+            ("07393+0514" or "06451-1643", not ("A" or "B")) => true,
+            ("22292+5825", not ("A" or "C")) => true,
+            ("05020+4349", not "A") => true,
+            ("13252-1110", not "Aa") => true,
+            ("02318+8916", "C" or "D") => true,
+            ("17190-3459", "D") => true,
+            ("05167+4600", not ("Aa" or "Ab" or "H" or "L")) => true,
+            ("13239+5456", "D" or "E" or "F" or "G" or "H") => true,
+            ("11221-2447", "C") => true,
+            _ => false
+        };
 
     private void Validate()
     {
@@ -1083,7 +1270,13 @@ internal sealed partial class Builder(string root, string output)
             }
         }
         File.Move(staging, catalogPath, true);
-        foreach (var (role, count) in OrbitalClassification.Apply(catalogPath, Path.Combine(output, "orb6orbits.txt"), Input("WDS", "wds_precise.txt")))
+        if (_userReviewsApplied.Count != _userReviews.Count)
+        {
+            var missing = _userReviews.Keys.Where(k => !_userReviewsApplied.Contains(k)).Take(10);
+            throw new InvalidDataException("User component reviews did not match any catalog star: " +
+                string.Join(", ", missing.Select(k => k.Wds + " " + k.Label)));
+        }
+        foreach (var (role, count) in OrbitalClassification.Apply(catalogPath, Path.Combine(output, "orb6orbits.txt"), Input("WDS", "wds_precise.txt"), _lockedRoles))
         {
             _counts["output_" + role] -= count;
             _counts["output_C"] = _counts.GetValueOrDefault("output_C") + count;
@@ -1112,16 +1305,22 @@ internal sealed partial class Builder(string root, string output)
         ];
         Program.WriteJson(Path.Combine(output, "build-manifest.json"), new
         {
-            schema_version = 11, status = "PROVISIONAL_RUNTIME_DEFAULT", counts = _counts,
+            schema_version = 13, status = "PROVISIONAL_RUNTIME_DEFAULT", counts = _counts,
             sources = used.Select(p => new { file = p, sha256 = Hash(p) }),
             catalog_sha256 = Hash(catalogPath),
             wds_matching = "Identity-first trial: unique component-scoped HIP/HD references before positional fallback; unique DM-to-HD links and simple unblended primary aliases require <=6 arcsec and <=1 mag agreement; matched AT-HYG first endpoints anchor epoch-aware companion searches; positional fallback retains 6 arcsec search, original 2/3 arcsec core and expanded-only <=2 mag guard",
             conflicting_system_assignment = "retain first system assignment; omit later conflicting relationship without duplicating star",
+            spectral_precedence = "Preserve known AT-HYG spectra; fill missing spectra from exact individual WDS endpoints with spect_src=WDS. Single spectra apply only to the first endpoint; simple '+' pairs supply both. Conflicting, blended/group and complex parenthesized spectra are not inferred.",
             wds_new_star_proximity_rejection = false, wds_pair_separation_limits = false,
             curated_sirius_b = "AT40:586689 is individual B of WDS 06451-1643; normalize Ba to B, retain optical Bb independently; retire duplicate WDS Ba identity without recycling its OMS ID",
             curated_epsilon_lyrae = "WDS 18443+3940: preserve AT40:1915855 as A and AT40:1915854 as B; AT40:1915959 is Ca, AT40:1915960 is D, CHR77 Cb remains a distinct source-only inner companion; B/Ca/Cb/D are physical C, A remains primary; retire duplicate WDS D without recycling its OMS ID",
             curated_izar = "WDS 14450+2704: AT40:1462701 (Izar, HD 129989) is A; AT40:1462698 (HD 129988) is B; override misleading primary-position match and retain original photometry and measurements; retire duplicate WDS B without recycling its OMS ID",
             curated_almach = "WDS 02039+4220: AT40:156575 is A; user-approved AT40:156597 / HD 12534 represents B/BC with original blended-source fields preserved; B and C are curated physical companions overriding conflicting WDS A-BC S flag; C remains distinct WDS-only; D unchanged; no inference of resolved B photometry or additional spectroscopic leaves",
+            curated_iota_cassiopeiae = "WDS 02291+6724: retain AT40:188568 as Aa, CHR6 Ab and separate STF262 B; BC row DM identifies A/system, not B, so do not enrich B with A's HD and discard it as a duplicate. Ab/B/Ca/Cb are physical C; D is user-curated optical V, outside the physical quintuple. Preserve all WDS pair measurements and stable identities.",
+            curated_alpha_centauri = "WDS 14396-6050: A=AT40:1455072 (Rigil Kentaurus), B=AT40:1455030 (Toliman), C=AT40:1440825 (Proxima Centauri). Exclude SCZ1 Ca-Cb, explicitly rejected as not a binary in WDS notes (Tok2014d). Preserve source astrometry, photometry, spectra and stable OMS identities; read the full precise separation field, including AC=7960.200 arcseconds.",
+            curated_review_batch = "User-reviewed Procyon, Sirius, Delta Cephei, Almaaz, Spica, Polaris, Gliese 667, Capella, Mizar and HD 98800 component roles override automatic motion/optical/ORB6 classification. Primary P is retained. Capella HEL1 O/P entries are suppressed by request, not asserted to be verified duplicates; their OMS IDs stay reserved. HD 98800 is OMS 160137, not unrelated OMS 160139. See oms-notes.txt and definitively-correct-systems.csv.",
+            user_component_reviews = "catalogs/user-component-reviews.csv applies the user's in-game developer component reviews (imported from dev/system-review-overrides.csv) as the highest-priority component role overrides after P; each row's component OMS identity is verified and the resulting roles are protected from ORB6 promotion",
+            kinematic_classification = "unreviewed components: a relative tangential velocity versus the primary above 75 km/s (4.740470 * |delta proper motion| * system distance, primary distance preferred) classifies V; otherwise a most-recent primary-anchored separation under 10 arcseconds classifies C; remaining components fall back to WDS flags and the extreme-motion heuristic",
             missing_wdss = true, shared_athyg_gaia_ids_allowed = true,
             visual_motion_threshold_masyr = 100, visual_motion_primary_fraction = 1.0,
             visual_motion_comparison = "Q only if companion-minus-primary vector norm is strictly >100 mas/year AND strictly greater than primary vector norm; AT-HYG preferred",

@@ -146,6 +146,27 @@ Check(constellationCodes.Length == 88 && constellationCodes.All(c => StarDesigna
     "All 88 IAU constellations have a genitive.");
 
 var circularOrbit = new MultipleStarOrbits.Orbit("00001+0000", "A", "B", 10, 0, 0, 0, 0, 1, "fixture");
+foreach(double scaleExtent in new[] { 0.0001, 0.1, 1, 10, 100, 1000, 10000 })
+    foreach(double plotSize in new[] { 100d, 240, 420 })
+        foreach(double plotZoom in new[] { 1d, 2, 10 }) {
+            var bar = MultipleStarCatalog.PlotScaleBar(scaleExtent, plotSize, plotZoom)!.Value;
+            var first = MultipleStarCatalog.PlotPosition(new(0, 0), scaleExtent, plotSize, plotZoom, new(3, 4));
+            var last = MultipleStarCatalog.PlotPosition(new(bar.Arcseconds, 0), scaleExtent, plotSize, plotZoom, new(3, 4));
+            Check(Math.Abs(Math.Log10(bar.Arcseconds) - Math.Round(Math.Log10(bar.Arcseconds))) < 1e-9 &&
+                bar.Pixels > (plotSize - 24) / 10 - 1e-9 &&
+                bar.Pixels <= plotSize - 24 + 1e-9 &&
+                Math.Abs(first.East - last.East - bar.Pixels) < 1e-6,
+                "Scale bar uses a fitting power of ten and matches actual projected arcseconds across extents, sizes, zoom and pan.");
+        }
+foreach(double arcseconds in new[] { 1d, 10, 100 }) {
+    var fittingBar = MultipleStarCatalog.PlotScaleBar(arcseconds, 420, 1)!.Value;
+    Check(fittingBar.Arcseconds == arcseconds && Math.Abs(fittingBar.Pixels - 174) < 1e-9,
+        "Use 1, 10 or 100 arcseconds when it fits the plot width, even beyond the old 120-pixel limit.");
+}
+Check(MultipleStarCatalog.PlotScaleBar(0, 420, 1) is null &&
+    MultipleStarCatalog.PlotScaleBar(1, 72, 1) is null &&
+    MultipleStarCatalog.PlotScaleBar(1, 420, 0) is null,
+    "No misleading scale is shown without an angular extent or usable plot projection.");
 var circularPoints = MultipleStarOrbits.Sample(circularOrbit, new(2, 3));
 Check(circularPoints.Length == 129 && circularPoints.All(p => Math.Abs(Math.Sqrt(Math.Pow(p.East - 2, 2) + Math.Pow(p.North - 3, 2)) - 10) < 1e-9),
     "Face-on circular relative orbit must have constant angular radius and translated reference.");
@@ -164,6 +185,26 @@ Check(Math.Abs(rotatedPeriastron[0].East - 5) < 1e-9 && Math.Abs(rotatedPeriastr
     "Periastron rotation must project through inclination.");
 Check(Math.Abs(circularPoints[^1].East - circularPoints[0].East) < 1e-9 &&
     Math.Abs(circularPoints[^1].North - circularPoints[0].North) < 1e-9, "Sampled orbit closes.");
+
+MultipleStarCatalog.Offset[] testLine = [new(0, 0), new(100, 0)];
+Check(MultipleStarOrbits.TouchesCurve(new(50, 5.5), 5, testLine) &&
+    !MultipleStarOrbits.TouchesCurve(new(50, 5.501), 5, testLine),
+    "Orbit contact includes the star radius and half of the one-pixel line thickness.");
+Check(MultipleStarOrbits.TouchesCurve(new(50, 0), 2, testLine),
+    "Orbit contact checks segment interiors, not just sampled vertices.");
+Check(MultipleStarOrbits.TouchesCurve(new(103, 4), 4.5, testLine) &&
+    !MultipleStarOrbits.TouchesCurve(new(104, 4), 4.5, testLine),
+    "Contact beyond a segment endpoint uses distance to the endpoint.");
+Check(MultipleStarOrbits.TouchesCurve(new(0, 2), 2, [new(0, 0), new(0, 0)]) &&
+    !MultipleStarOrbits.TouchesCurve(new(0, 0), 2, []),
+    "Degenerate projected segments and empty curves are handled.");
+var contactPoint = MultipleStarCatalog.PlotPosition(new(50, 3), 100, 272, 1, new(0, 0));
+var contactCurve = testLine.Select(p => MultipleStarCatalog.PlotPosition(p, 100, 272, 1, new(0, 0))).ToArray();
+var zoomPoint = MultipleStarCatalog.PlotPosition(new(50, 3), 100, 272, 2, new(7, 8));
+var zoomCurve = testLine.Select(p => MultipleStarCatalog.PlotPosition(p, 100, 272, 2, new(7, 8))).ToArray();
+Check(MultipleStarOrbits.TouchesCurve(contactPoint, 5, contactCurve) &&
+    !MultipleStarOrbits.TouchesCurve(zoomPoint, 5, zoomCurve),
+    "Contact is evaluated in screen pixels at the current plot zoom and pan.");
 
 foreach(var points in new[] {
     new[] { (100f, 100f), (102f, 100f) },
@@ -185,6 +226,9 @@ foreach(var points in new[] {
 }
 
 string temp = Path.Combine(Path.GetTempPath(), $"oms-multi-{Guid.NewGuid():N}.csv");
+string reviewTemp = temp + ".reviews.csv";
+string approvalTemp = temp + ".approvals.csv";
+string blockedApprovalPath = temp + ".blocked";
 try {
     string[] header = ("oms_id,system_id,primary_oms_id,component,component_label,ra,dec,mag,absmag,ci,dist,hip,hd,h,stf,stt,bds,wds_id," +
         "proper,bayer,con,spect,radec_source,relationships,theta_deg,rho_arcsec,measurement_year,wds_source_line,mag_src,pmra,pmdec,id,tyc,gaia,hyg,hr,gl,flam,bu").Split(',');
@@ -211,6 +255,152 @@ try {
     ];
     File.WriteAllLines(temp, new[] { string.Join(",", header) }.Concat(rows));
     var catalog = MultipleStarCatalog.Load(temp);
+    Check(catalog.DefinitivelyCorrectPrimaries.Count == 0, "Review metadata is opt-in for release catalog loading.");
+    File.WriteAllLines(reviewTemp, ["primary_oms_id,wds_id,name", "1,00001+0000,Reviewed fixture"]);
+    Check(MultipleStarCatalog.Load(temp, reviewTemp).DefinitivelyCorrectPrimaries.SetEquals([1L]),
+        "Definitive review resolves the exact primary and WDS identity.");
+    foreach(string invalid in new[] {
+        "2,00001+0000,Companion", "999,00001+0000,Missing primary",
+        "1,99999+9999,Wrong identity", "1,00001+0000,",
+        "1,00001+0000,First\n1,00001+0000,Duplicate", "bad,00001+0000,Bad ID"
+    }) {
+        File.WriteAllText(reviewTemp, "primary_oms_id,wds_id,name\n" + invalid + "\n");
+        bool rejected = false;
+        try { MultipleStarCatalog.Load(temp, reviewTemp); }
+        catch(InvalidDataException) { rejected = true; }
+        Check(rejected, "Invalid definitive review must fail explicitly: " + invalid);
+    }
+    File.WriteAllText(reviewTemp, "wrong_header\n");
+    bool badReviewHeader = false;
+    try { MultipleStarCatalog.Load(temp, reviewTemp); }
+    catch(InvalidDataException) { badReviewHeader = true; }
+    Check(badReviewHeader, "Malformed review header is rejected.");
+#if DEBUG
+    File.WriteAllLines(reviewTemp, ["primary_oms_id,wds_id,name", "1,00001+0000,Reviewed fixture"]);
+    string originalReviews = File.ReadAllText(reviewTemp);
+    var editableReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    editableReviews.SetDefinitiveApproval(1, false);
+    Check(!editableReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        !MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).DefinitivelyCorrectPrimaries.Contains(1),
+        "Undo approval overrides shipped approval immediately and after reload.");
+    editableReviews.SetDefinitiveApproval(1, true);
+    Check(editableReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).DefinitivelyCorrectPrimaries.Contains(1),
+        "Approval is saved atomically and survives reload, including a quoted primary name.");
+    Check(File.ReadAllText(reviewTemp) == originalReviews &&
+        File.ReadAllLines(approvalTemp).Length == 2,
+        "Runtime changes do not edit the shipped list; repeated toggles keep one override per primary.");
+    Check(MultipleStarCatalog.Load(temp, approvalOverridesPath: approvalTemp).DefinitivelyCorrectPrimaries.Contains(1),
+        "A local approval can add an unreviewed primary without a shipped baseline.");
+    bool rejectedCompanionApproval = false;
+    try { editableReviews.SetDefinitiveApproval(2, true); }
+    catch(InvalidDataException) { rejectedCompanionApproval = true; }
+    Check(rejectedCompanionApproval && File.ReadAllLines(approvalTemp).Length == 2,
+        "Companions cannot be approved as primaries or change persisted overrides.");
+    var blockedReviews = MultipleStarCatalog.Load(temp, reviewTemp, blockedApprovalPath);
+    Directory.CreateDirectory(blockedApprovalPath);
+    bool writeFailed = false;
+    try { blockedReviews.SetDefinitiveApproval(1, false); }
+    catch(Exception ex) when(ex is IOException or UnauthorizedAccessException) { writeFailed = true; }
+    Check(writeFailed && blockedReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        !Directory.EnumerateFiles(Path.GetDirectoryName(temp)!, Path.GetFileName(blockedApprovalPath) + ".*.tmp").Any(),
+        "Failed persistence leaves the displayed approval unchanged and removes temporary output.");
+    const string componentReviewHeader = "primary_oms_id,wds_id,name,approved,component_oms_id,component_label,original_type,desired_type,notes";
+    File.WriteAllText(approvalTemp, "primary_oms_id,wds_id,name,approved\n1,00001+0000,Legacy approval,false\n");
+    var componentReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    string catalogBeforeReviews = File.ReadAllText(temp);
+    string notes = "User review, \"keep identity\"\nAdditional explanation: caf\u00e9.";
+    componentReviews.SetComponentReview(1, 2, "C", notes);
+    var reloadedReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    Check(reloadedReviews.GetComponentReview(2) == new MultipleStarCatalog.ComponentReview("C", notes) &&
+        !reloadedReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        File.ReadLines(approvalTemp).First() == componentReviewHeader,
+        "Component reviews migrate the legacy CSV while preserving undo approvals and quoted/multiline Unicode notes.");
+    Check(reloadedReviews.Stars[2].Role == "V" && reloadedReviews.Systems.Single().Members.Count == 6 &&
+        File.ReadAllText(temp) == catalogBeforeReviews && File.ReadAllText(reviewTemp) == originalReviews,
+        "Pending corrections leave live component types, membership and shipped catalog/reviews unchanged.");
+    foreach(var (type, _) in MultipleStarCatalog.ComponentReviewTypes) {
+        componentReviews.SetComponentReview(1, 2, type, notes);
+        Check(MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).GetComponentReview(2)?.DesiredType == type,
+            "Every component type, including unlink, survives reload: " + type);
+    }
+    componentReviews.SetComponentReview(1, 3, "unlink", "");
+    componentReviews.SetComponentReview(1, 2, "C", notes);
+    componentReviews.SetDefinitiveApproval(1, true);
+    reloadedReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    Check(reloadedReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        reloadedReviews.GetComponentReview(2)?.Notes == notes && reloadedReviews.GetComponentReview(3)?.DesiredType == "unlink",
+        "Approving a corrected system preserves every pending component correction.");
+    componentReviews.SetDefinitiveApproval(1, false);
+    reloadedReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    Check(!reloadedReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        reloadedReviews.GetComponentReview(2)?.Notes == notes && reloadedReviews.GetComponentReview(3)?.DesiredType == "unlink",
+        "Undoing approval also preserves all pending component corrections.");
+    componentReviews.SetDefinitiveApproval(1, true);
+    componentReviews.SetComponentReview(1, 2, "C", "");
+    Check(MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).GetComponentReview(2) ==
+        new MultipleStarCatalog.ComponentReview("C", ""),
+        "Clearing a note preserves a requested type change.");
+    componentReviews.SetComponentReview(1, 2, "V", "Note without a type change");
+    Check(MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).GetComponentReview(2)?.Notes == "Note without a type change",
+        "Notes can be recorded without changing the original type.");
+    componentReviews.SetComponentReview(1, 2, "V", "");
+    reloadedReviews = MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp);
+    Check(reloadedReviews.GetComponentReview(2) is null &&
+        reloadedReviews.GetComponentReview(3)?.DesiredType == "unlink" &&
+        reloadedReviews.DefinitivelyCorrectPrimaries.Contains(1),
+        "Returning to the original type with no note cancels only that component's request.");
+    componentReviews.SetComponentReview(1, 1, "P", "Primary note");
+    Check(MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp).GetComponentReview(1)?.Notes == "Primary note",
+        "The primary component can also carry a review note.");
+    string savedComponents = File.ReadAllText(approvalTemp);
+    foreach(var (primary, component, type) in new[] { (999L, 2L, "C"), (1L, 999L, "C"), (1L, 2L, "bad") }) {
+        bool rejectedComponent = false;
+        try { componentReviews.SetComponentReview(primary, component, type, ""); }
+        catch(InvalidDataException) { rejectedComponent = true; }
+        Check(rejectedComponent && File.ReadAllText(approvalTemp) == savedComponents,
+            "Invalid component identity or type cannot mutate saved reviews.");
+    }
+    writeFailed = false;
+    try { blockedReviews.SetComponentReview(1, 2, "C", "Unsaved"); }
+    catch(Exception ex) when(ex is IOException or UnauthorizedAccessException) { writeFailed = true; }
+    Check(writeFailed && blockedReviews.GetComponentReview(2) is null &&
+        blockedReviews.DefinitivelyCorrectPrimaries.Contains(1) &&
+        !Directory.EnumerateFiles(Path.GetDirectoryName(temp)!, Path.GetFileName(blockedApprovalPath) + ".*.tmp").Any(),
+        "Failed component writes leave memory and approval unchanged and clean up temporary output.");
+    foreach(string invalidComponent in new[] {
+        "1,99999+9999,Wrong WDS,,2,B,V,C,",
+        "1,00001+0000,Missing component,,999,B,V,C,",
+        "1,00001+0000,Stale label,,2,Z,V,C,",
+        "1,00001+0000,Stale type,,2,B,C,V,",
+        "1,00001+0000,Invalid type,,2,B,V,bad,",
+        "1,00001+0000,Mixed row,true,2,B,V,C,",
+        "2,00001+0000,Wrong primary,,3,C,V,C,",
+        "1,00001+0000,Duplicate,,2,B,V,C,\n1,00001+0000,Duplicate,,2,B,V,unlink,",
+        "1,00001+0000,Incomplete approval,true,,,,,Unexpected note"
+    }) {
+        File.WriteAllText(approvalTemp, componentReviewHeader + "\n" + invalidComponent + "\n");
+        bool rejectedComponent = false;
+        try { MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp); }
+        catch(InvalidDataException) { rejectedComponent = true; }
+        Check(rejectedComponent, "Invalid component reviews fail explicitly: " + invalidComponent);
+    }
+    foreach(string invalidOverride in new[] {
+        "1,99999+9999,Wrong WDS,true", "2,00001+0000,Companion,true",
+        "1,00001+0000,Wrong status,maybe", "1,00001+0000,First,true\n1,00001+0000,Duplicate,false"
+    }) {
+        File.WriteAllText(approvalTemp, "primary_oms_id,wds_id,name,approved\n" + invalidOverride + "\n");
+        bool rejectedOverride = false;
+        try { MultipleStarCatalog.Load(temp, reviewTemp, approvalTemp); }
+        catch(InvalidDataException) { rejectedOverride = true; }
+        Check(rejectedOverride, "Invalid local overrides fail explicitly: " + invalidOverride);
+    }
+    Console.WriteLine("Developer review persistence passed: legacy migration, all types/unlink, notes, cancellation, approvals, invalid identities and failed writes.");
+#else
+    File.WriteAllText(approvalTemp, "Malformed developer reviews must not be read in Release.\n");
+    Check(MultipleStarCatalog.Load(temp, approvalOverridesPath: approvalTemp).DefinitivelyCorrectPrimaries.Count == 0,
+        "Release ignores local developer review CSVs entirely, including malformed ones.");
+#endif
     var system = catalog.Systems.Single();
     Check(!system.Primary.IsSystemCompanion &&
         system.Members.Where(s => s.Id != system.Primary.Id).All(s => s.IsSystemCompanion),
@@ -371,6 +561,16 @@ try {
         Check(fixtureCurves.Length == 1 && fixtureCurves[0].Companion == "B" &&
             fixtureCurves[0].Points.All(p => double.IsFinite(p.East) && double.IsFinite(p.North)),
             "Orbit must match exact WDS and directional individual endpoints.");
+        var translatedLayout = MultipleStarCatalog.Layout(system);
+        var referenceShift = new MultipleStarCatalog.Offset(12.5, -7.25);
+        var originalReference = translatedLayout["A"];
+        translatedLayout["A"] = new(originalReference.East + referenceShift.East,
+            originalReference.North + referenceShift.North);
+        var translatedCurve = orbitFixtures.Curves(system, translatedLayout).Single();
+        Check(translatedCurve.Points.Zip(fixtureCurves[0].Points).All(pair =>
+            Math.Abs(pair.First.East - pair.Second.East - referenceShift.East) < 1e-9 &&
+            Math.Abs(pair.First.North - pair.Second.North - referenceShift.North) < 1e-9),
+            "Every orbit point follows the OMS parent position exactly, independently of ORB6 sky coordinates.");
         var beforeOrbitLayout = MultipleStarCatalog.Layout(system);
         var originalMeasuredPoint = beforeOrbitLayout["B"];
         orbitFixtures.Curves(system, beforeOrbitLayout);
@@ -407,6 +607,23 @@ try {
         "Visual motion must be component minus primary.");
     Check(MultipleStarCatalog.RelativeProperMotion(system.Members.Single(s => s.Label == "C"), system.Primary) == (3d, null),
         "Missing motion axis must not be treated as zero.");
+    Check(MultipleStarCatalog.RelativeProperMotionMagnitude(system.Primary, system.Primary) is null &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(system.Members.Single(s => s.Label == "B"), system.Primary)
+            is double combinedMotion && Math.Abs(combinedMotion - Math.Sqrt(13)) < 1e-9 &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(system.Members.Single(s => s.Label == "C"), system.Primary) == 3,
+        "Relative motion magnitude combines both recorded axes, uses a lone axis, and omits unavailable motion.");
+    MultipleStarCatalog.Star MotionStar(string role, string ra, string dec) {
+        string[] names = ["component", "pmra", "pmdec"];
+        return new([role, ra, dec], names.Select((name, index) => (name, index))
+            .ToDictionary(item => item.name, item => item.index));
+    }
+    var motionPrimary = MotionStar("P", "0", "0");
+    Check(MultipleStarCatalog.RelativeProperMotionMagnitude(MotionStar("V", "-6", ""), motionPrimary) == 6 &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(MotionStar("Q", "", "-8"), motionPrimary) == 8 &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(MotionStar("V", "0", "0"), motionPrimary) == 0 &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(MotionStar("C", "6", "8"), motionPrimary) == 10 &&
+        MultipleStarCatalog.RelativeProperMotionMagnitude(MotionStar("U", "", ""), motionPrimary) is null,
+        "Relative motion is available regardless of component category, with lone axes and zero handled.");
     Check(system.Members.Single(s => s.Label == "E").Role == "Q" &&
         MultipleStarCatalog.RelativeProperMotion(system.Members.Single(s => s.Label == "E"), system.Primary) == (3d, -2d),
         "Q accepted and retains Visual relative-motion behavior.");
@@ -651,7 +868,45 @@ try {
     Console.WriteLine("Multi fixtures passed: quoted CSV, latest measurements, north/east geometry, chaining, reverse edges, unknown/group geometry, overlap picks, boundaries and invalid lists.");
     if(args.Length > 0) {
         var timer = System.Diagnostics.Stopwatch.StartNew();
-        var real = MultipleStarCatalog.Load(args[0]);
+        var real = MultipleStarCatalog.Load(args[0],
+            Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "definitively-correct-systems.csv"));
+        Check(real.DefinitivelyCorrectPrimaries.IsSupersetOf(
+            [104412L, 84638L, 316359L, 54185L, 182054L, 27142L, 228978L, 57654L, 181816L, 160137L]),
+            "The original ten user-reviewed primaries remain marked (alongside bulk-imported approvals), with corrected HD 98800 identity.");
+        foreach(var (primaryId, physical) in new (long, string[])[] {
+            (104412, ["B"]), (84638, ["B"]), (316359, ["C"]),
+            (54185, []), (182054, []), (57654, ["Ab", "H", "L"])
+        }) {
+            var reviewed = real.Systems.Single(s => s.Primary.Id == primaryId);
+            Check(reviewed.Primary.Role == "P" &&
+                reviewed.Members.Where(s => s.Id != primaryId)
+                    .All(s => s.Role == (physical.Contains(s.Label) ? "C" : "V")) &&
+                physical.All(label => reviewed.Members.Any(s => s.Label == label)),
+                $"Reviewed OMS {primaryId} keeps P and exactly the requested physical companions; others are Visual.");
+        }
+        foreach(var (primaryId, visualLabels) in new (long, string[])[] {
+            (27142, ["C", "D"]), (228978, ["D"]),
+            (181816, ["D", "E", "F", "G", "H"]), (160137, ["C"])
+        }) {
+            var reviewed = real.Systems.Single(s => s.Primary.Id == primaryId);
+            Check(visualLabels.All(label => reviewed.Members.Single(s => s.Label == label).Role == "V"),
+                $"Reviewed OMS {primaryId} has the requested Visual components.");
+            Check(reviewed.Members.Where(s => s.Id != primaryId && !visualLabels.Contains(s.Label)).All(s => s.Role == "C"),
+                $"Other physical companions of OMS {primaryId} are preserved.");
+        }
+        var capella = real.Systems.Single(s => s.Primary.Id == 57654);
+        Check(!real.Stars.ContainsKey(373780) && !real.Stars.ContainsKey(373781) &&
+            !capella.Members.Any(s => s.Label is "O" or "P") &&
+            !capella.Measures.Any(m => m.Reference is "O" or "P" || m.Companion is "O" or "P"),
+            "Suppressed Capella O/P have no catalog rows, plot markers or dangling measurements.");
+        var registry = File.ReadLines(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "identity-registry.csv"));
+        Check(registry.Contains("WDS:05167+4600:O,373780") && registry.Contains("WDS:05167+4600:P,373781"),
+            "Suppressed Capella O/P identities stay reserved, not recycled.");
+        Check(real.Systems.Single(s => s.Primary.Id == 160139).Members.Single(s => s.Label == "B").Role == "C",
+            "Unrelated OMS 160139 is unchanged.");
+        Console.WriteLine("Definitive review checks passed: ten primary identities, exact component roles, Capella suppression and reserved IDs.");
+        if(args.Contains("--reviewed-systems-only"))
+            return;
         if(args.Contains("--benchmark-search")) {
             foreach(string query in new[] { "sirius", "burnham 1", "123", "not-a-recorded-identifier" }) {
                 var searchTimer = System.Diagnostics.Stopwatch.StartNew();
@@ -670,6 +925,30 @@ try {
             }
         }
         var realOrbits = MultipleStarOrbits.Load(orbitPath);
+        var alphaCen = real.Systems.Single(s => s.Primary["wds_id"] == "14396-6050");
+        var alphaLayout = MultipleStarCatalog.Layout(alphaCen);
+        Check(alphaCen.Primary.Id == 195683 && alphaCen.Primary.Label == "A" &&
+            alphaCen.Primary["proper"] == "Rigil Kentaurus" && alphaCen.Members.Count == 3 &&
+            alphaCen.Members.Single(s => s.Label == "B").Id == 195677 &&
+            alphaCen.Members.Single(s => s.Label == "C").Id == 374371 &&
+            alphaCen.Members.Where(s => s.Label != "A").All(s => s.Role == "C") &&
+            alphaCen.Measures.Any(m => m.Reference == "A" && m.Companion == "B" && m.Rho == 8.086) &&
+            alphaCen.Measures.Any(m => m.Reference == "A" && m.Companion == "C" && m.Rho == 7960.200) &&
+            alphaLayout.Count == 3 &&
+            Math.Abs(Math.Sqrt(Math.Pow(alphaLayout["C"].East, 2) + Math.Pow(alphaLayout["C"].North, 2)) - 7960.200) < 1e-8 &&
+            realOrbits.Curves(alphaCen, alphaLayout).Any(c => c.Companion == "B"),
+            "Alpha Centauri uses Rigil Kentaurus A, Toliman B, single Proxima C, full wide separation and the A-B orbit.");
+        var iotaCas = real.Systems.Single(s => s.Primary["wds_id"] == "02291+6724");
+        Check(iotaCas.Primary.Id == 26669 && iotaCas.Primary.Label == "Aa" &&
+            iotaCas.Members.Single(s => s.Label == "Ab").Id == 369442 &&
+            iotaCas.Members.Single(s => s.Label == "B").Id == 369443 &&
+            iotaCas.Members.Where(s => s.Label is "Ab" or "B" or "Ca" or "Cb").All(s => s.Role == "C") &&
+            iotaCas.Members.Single(s => s.Label == "D").Id == 379241 &&
+            iotaCas.Members.Single(s => s.Label == "D").Role == "V" &&
+            iotaCas.Measures.Any(m => m.Reference == "A" && m.Companion == "B" && m.Rho == 2.980) &&
+            iotaCas.Measures.Any(m => m.Reference == "Aa" && m.Companion == "Ab" && m.Rho == 0.601) &&
+            MultipleStarCatalog.Layout(iotaCas).Count == iotaCas.Members.Count,
+            "Iota Cas restores reserved B separately from close Ab, preserves its quintuple hierarchy and plots every component.");
         Check(realOrbits.Orbits.Count > 1000, "Real ORB6 snapshot must contain supported visual orbits.");
         Check(real.Systems.Count > 0, "Real catalog has no systems.");
         var oms24185 = real.Systems.Single(s => s.Primary.Id == 24185);
@@ -778,4 +1057,8 @@ try {
     }
 } finally {
     File.Delete(temp);
+    File.Delete(reviewTemp);
+    File.Delete(approvalTemp);
+    if(Directory.Exists(blockedApprovalPath))
+        Directory.Delete(blockedApprovalPath);
 }

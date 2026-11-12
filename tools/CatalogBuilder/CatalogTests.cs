@@ -23,17 +23,18 @@ internal static class CatalogTests
         string orbitPath = Path.Combine(output, "orb6orbits.txt");
         File.WriteAllLines(orbitPath, [OrbitRow("03000+0000", grade: "9")]);
         string[] header = "id,tyc,gaia,hyg,hip,hd,hr,gl,bayer,flam,con,proper,ra,dec,pos_src,dist,x0,y0,z0,dist_src,mag,absmag,ci,mag_src,rv,rv_src,pmra,pmdec,pm_src,vx,vy,vz,spect,spect_src".Split(',');
-        string Star(int id, double ra, string gaia, double mag, double motion)
+        string Star(int id, double ra, string gaia, double mag, double motion, string spectral = "", string spectralSource = "")
         {
             string[] row = Enumerable.Repeat("", header.Length).ToArray();
             void Set(string column, string value) => row[Array.IndexOf(header, column)] = value;
             Set("id", id.ToString(Program.Invariant)); Set("ra", Program.F(ra)); Set("dec", "0");
             Set("gaia", gaia); Set("mag", Program.F(mag)); Set("pos_src", "T"); Set("hd", "123");
             Set("pmra", Program.F(motion)); Set("pmdec", "0");
+            Set("spect", spectral); Set("spect_src", spectralSource);
             return Csv.Line(row);
         }
         string PairRow(string id, string components, double? rho, int year = 2000, string flags = "", string pm = "+000",
-            string pm2 = "", string dm = "")
+            string pm2 = "", string dm = "", string spectral = "")
         {
             char[] row = Enumerable.Repeat(' ', 130).ToArray();
             void Set(int offset, int length, string value) => value.PadRight(length).CopyTo(0, row, offset, length);
@@ -41,6 +42,7 @@ internal static class CatalogTests
             Set(23, 4, "1991"); Set(28, 4, year.ToString(Program.Invariant)); Set(34, 3, "  1");
             Set(38, 6, "90.00"); Set(46, 7, rho?.ToString("0.000", Program.Invariant) ?? "");
             Set(58, 5, "5.00"); Set(64, 5, "7.00");
+            Set(70, 9, spectral);
             Set(80, 4, pm); Set(84, 4, "+000"); Set(107, 4, flags);
             if (pm2.Length > 0) { Set(89, 4, pm2); Set(93, 4, "+000"); }
             Set(98, 8, dm);
@@ -85,7 +87,8 @@ internal static class CatalogTests
             string[] identifiedPrimary = Csv.Parse(Star(16, 23 + 4.0 / 54000, "", 5, 0));
             identifiedPrimary[Array.IndexOf(header, "hip")] = "901";
             File.WriteAllLines(Path.Combine(athyg, "athyg_40.csv"),
-                new[] { Csv.Line(header), Star(1, 1, "shared", 5, 0), Star(2, 1 + 0.1 / 54000, "shared", 7, 0),
+                new[] { Csv.Line(header), Star(1, 1, "shared", 5, 0, "K2III", "HYG"),
+                    Star(2, 1 + 0.1 / 54000, "shared", 7, 0, "unknown", "N"),
                     Star(3, 3, "motion", 5, 500), Star(4, 4, "", 10, 120), Csv.Line(faint), Csv.Line(tie1), Csv.Line(tie2),
                     Star(8, 19 + 5.0 / 54000, "", 5, 0), Star(9, 19 + 24.0 / 54000, "", 7, 0),
                     Star(10, 20 + 5.0 / 54000, "", 7.01, 0), Star(11, 21 + 5.0 / 54000, "", 7, 0),
@@ -97,14 +100,20 @@ internal static class CatalogTests
                     "156575,2837-2311-1,,9618,9640,12533,603,,Gam-1,57,And,Almach,2.064984,42.329725,HIP_X,120.4819,76.3682,45.8409,81.1321,H,2.308,-3.097,1.676,T,-11.5,OTHER,42.32,-49.3,HIP,-3.47,26.11,-28.56,B8V,HYG",
                     "156597,2837-2311-2,346231302441905920,,,12534,,,,,And,,2.06519051,42.33107165,T,82.8336,52.5017,31.5186,55.7812,G_R3,5.021,0.43,,T,-14.0,OTHER,16.64,-47.75,G_R3,-1.41,6.77,-23.29,B 9 V,T",
                     "1462698,2019-1250-1,,,,129988,,,,,Boo,,14.7497723,27.07492778,T_X,67.1926,-44.9842,-39.4454,30.5831,G_R2,4.808,0.671,0.064,T,-23.0,OTHER,-43.52,22.5,G_R2,8.71,26.08,-4.09,,N",
-                    "1462701,2019-1251-1,1279798794197267072,71879,72105,129989,5505,,Eps,36,Boo,Izar,14.74978422,27.0742078,T,72.324,-48.4198,-42.4582,32.9178,G_R3,2.578,-1.718,1.359,T,-16.6,OTHER,-50.82,21.02,G_R3,2.09,25.01,-1.14,K0II-III,T" });
+                    "1462701,2019-1251-1,1279798794197267072,71879,72105,129989,5505,,Eps,36,Boo,Izar,14.74978422,27.0742078,T,72.324,-48.4198,-42.4582,32.9178,G_R3,2.578,-1.718,1.359,T,-16.6,OTHER,-50.82,21.02,G_R3,2.09,25.01,-1.14,K0II-III,T",
+                    "188568,4058-1504-1,517650349234855424,11542,11569,15089,707,,Iot,,Cas,Huagai,2.48442859,67.4023957,T,45.2896,13.8497,10.5378,41.8125,G_R3,4.627,1.347,0.105,T,1.0,HYG,-12.3,6.59,G_R3,0.87,-2.66,1.47,A5P,T",
+                    "1440825,9010-4949-1,5853498713190525696,70666,70890,,,551,,,Cen,Proxima Centauri,14.495985,-62.679485,HIP_X,1.302,-0.4745,-0.3633,-1.1567,G_R3,11.187,15.614,2.099,T,-21.943,G_R3,-3781.74,769.47,G_R3,-9.54,22.09,21.67,M5Ve,HYG",
+                    "1455030,9007-5848-1,5877748442128924544,71453,71681,128621,5460,559B,Alp-2,,Cen,Toliman,14.66094189,-60.83947139,T,1.3475,-0.5036,-0.4213,-1.1767,H,1.243,5.595,,T,-22.586,G_R2,-3614.39,802.98,HIP,-9.81,21.9,22.22,K1V,HYG",
+                    "1455072,9007-5849-1,,71456,71683,128620,5459,559A,Alp-1,,Cen,Rigil Kentaurus,14.66136069,-60.83514707,T,1.3475,-0.5036,-0.4214,-1.1767,H,0.137,4.489,,T,-15.252,OTHER,-3679.25,473.67,HIP,-11.41,21.1,14.79,G2V,HYG" });
             foreach (string name in new[] { "LICENSE", "ACKNOWLEDGMENTS.md" }) File.WriteAllText(Path.Combine(athyg, name), "fixture");
             foreach (string name in new[] { "wdsnewnotes_main.txt", "h.txt", "stf.txt", "stt.txt", "hds.txt", "wdserror.txt", "wdsweb_format.txt", "bf.txt" })
                 File.WriteAllText(Path.Combine(wds, name), "");
             File.WriteAllLines(Path.Combine(wds, "bf.txt"), [
                 "19000+0000 BU    1    eps 1 Lyr             eps Lyr               4 Lyr",
                 "19000+0000 BU    1    eps 1 Lyr",
-                "22000+0000 TST   1    Fixture Primary"
+                "22000+0000 TST   1    Fixture Primary",
+                "14396-6050 LDS 494C   Proxima Centauri      V645 Cen",
+                "14396-6050 RHD   1A   alp Cen               Rigel Kentaurus"
             ]);
             string BdsRow(string id, string number, string discoverer = "TST   1", string omit = "") =>
                 id.PadRight(13) + "23549+3819".PadRight(13) + "17157".PadRight(7) +
@@ -146,24 +155,28 @@ internal static class CatalogTests
             "  9876".CopyTo(0, hd, 0, 6);
             "BD+00  123".PadRight(12).CopyTo(0, hd, 6, 12);
             File.WriteAllText(Path.Combine(temp, "Henry Draper", "catalog.dat"), new string(hd) + Environment.NewLine);
+            char[] iotaHd = Enumerable.Repeat(' ', 48).ToArray();
+            " 15089".CopyTo(0, iotaHd, 0, 6);
+            "BD+66  213".PadRight(12).CopyTo(0, iotaHd, 6, 12);
+            File.AppendAllText(Path.Combine(temp, "Henry Draper", "catalog.dat"), new string(iotaHd) + Environment.NewLine);
             File.WriteAllLines(Path.Combine(wds, "wds_precise.txt"),
             [
-                PairRow("01000+0000", "AB", 0.1, pm: "+500", pm2: "+700"),
-                PairRow("01000+0000", "AC", 1200),
+                PairRow("01000+0000", "AB", 0.1, pm: "+500", pm2: "+700", spectral: "F5V+G0V"),
+                PairRow("01000+0000", "AC", 1200, spectral: "F5V+K7V"),
                 PairRow("01000+0000", "AD", null),
                 PairRow("01000+0000", "AE", 20, 2020),
                 PairRow("01000+0000", "AF", 0.001),
-                PairRow("02000+0000", "AB", 0.1, pm2: "+101", dm: "+00  123"),
-                PairRow("02000+0000", "AC", 0.2, pm2: "+100"),
+                PairRow("02000+0000", "AB", 12, pm2: "+101", dm: "+00  123", spectral: "G2V"),
+                PairRow("02000+0000", "AC", 11, pm2: "+100"),
                 PairRow("07000+0000", "Aa1,2", 0.01),
                 PairRow("07000+0000", "Aa,Ab", 0.1),
                 PairRow("07000+0000", "Ba,Bb", 0.1),
-                PairRow("07000+0000", "AB,CD", 100),
+                PairRow("07000+0000", "AB,CD", 100, spectral: "F0V+G0V"),
                 PairRow("08000+0000", "AB", 10),
                 PairRow("03000+0000", "AB", 10, pm2: "-101"),
                 PairRow("09000+0000", "AB", 10),
-                PairRow("10000+0000", "AB", 10, flags: "I"),
-                PairRow("10000+0000", "AC", 20),
+                PairRow("10000+0000", "AB", 10, flags: "I", spectral: "F5V"),
+                PairRow("10000+0000", "AC", 20, spectral: "G0V"),
                 PairRow("10000+0000", "AD", 30),
                 PairRow("10000+0000", "AE", 40),
                 PairRow("10000+0000", "AF", 50, flags: "S"),
@@ -196,7 +209,16 @@ internal static class CatalogTests
                 PairRow("05000+0000", "AD", 30, flags: "Y"),
                 PairRow("06000+0000", "AB", 10, flags: "X")[..112] + "      .         . ",
                 "14450+2704STF1877AB    1822 2024  480 346.80    2.910      2.58  4.81 K0II-III  -051+020          +27 2417 N    144459.14+270429.9",
-                "14450+2704STF1877AC    1901 2020    7 254.40  174.070      2.58 12.58 K0II-III  -051+020 -006-016          N    144459.14+270429.9"
+                "14450+2704STF1877AC    1901 2020    7 254.40  174.070      2.58 12.58 K0II-III  -051+020 -006-016          N    144459.14+270429.9",
+                "02291+6724CHR   6Aa,Ab 1982 2021   22  18.10    0.601      4.66  7.88 A4V+F9V   -018+012          +66  213 NO   022903.96+672408.7",
+                "02291+6724STF 262AB    1782 2022  272 230.80    2.980      4.66  6.92 A4V+F5V   -018+012 -018+012 +66  213 NO   022903.96+672408.7",
+                "02291+6724STF 262AC    1779 2022  234 116.50    6.930      4.63  9.05 A4V       -018+012          +66  213 NU   022903.96+672408.7",
+                "02291+6724STF 262BC    1829 2016  155  98.70    8.628      6.92  9.05 F5V       -018+012          +66  213 N    022903.56+672407.0",
+                "02291+6724CTU   2Ca,Cb 2002 2018    5 100.80    0.226      4.5   6.1  K3        -018+012                   N  K 022903.94+672408.6",
+                "02291+6724STF 262AD    1892 2016   10  59.80  210.910      4.63  8.48 A4V       -028+037 -008+002          N    022903.96+672408.7",
+                "14396-6050RHD   1AB    1752 2023  481   5.10    8.086      0.01  1.33 G2V+K1V   -368+047          -60 5483 NO P 143936.50-605002.3",
+                "14396-6050LDS 494AC    1920 2016    4 212.00 7960.200      0.14 12.7  G2V+M5Ve  -364+070                   NO P 143936.50-605002.3",
+                "14396-6050SCZ   1Ca,Cb 1996 1996    2 100.00    0.340     11.1  18.   M5Ve      -368+048                   N  P 142942.94-624046.1"
             ]);
             new Builder(temp, output).Run();
             Validation.Run(temp, output);
@@ -211,6 +233,50 @@ internal static class CatalogTests
                 if (!value) throw new InvalidOperationException("Catalog fixture failed: " + message);
             }
             Check(rows.Count(r => Get(r, "gaia") == "shared") == 2, "shared Gaia rows retained");
+            var alphaCen = rows.Where(r => Get(r, "wds_id") == "14396-6050").ToArray();
+            var alphaA = alphaCen.Single(r => Get(r, "component_label") == "A");
+            var alphaB = alphaCen.Single(r => Get(r, "component_label") == "B");
+            var alphaC = alphaCen.Single(r => Get(r, "component_label") == "C");
+            Check(alphaCen.Length == 3 &&
+                Get(alphaA, "id") == "1455072" && Get(alphaA, "proper") == "Rigil Kentaurus" &&
+                Get(alphaB, "id") == "1455030" && Get(alphaB, "proper") == "Toliman" &&
+                Get(alphaC, "id") == "1440825" && Get(alphaC, "proper") == "Proxima Centauri" &&
+                Get(alphaA, "component") == "P" && Get(alphaB, "component") == "C" && Get(alphaC, "component") == "C" &&
+                alphaCen.All(r => Get(r, "primary_oms_id") == Get(alphaA, "oms_id")),
+                "Alpha Centauri has exactly A Rigil Kentaurus, B Toliman, C Proxima; no historical Ca/Cb or duplicate stars");
+            Check(Get(alphaB, "rho_arcsec") == Program.F(8.086) &&
+                Get(alphaC, "rho_arcsec") == Program.F(7960.200) &&
+                Get(alphaC, "relationships") == "A>C" && Get(alphaC, "theta_deg") == Program.F(212) &&
+                Get(alphaC, "mag") == "11.187" && Get(alphaC, "spect") == "M5Ve",
+                "Alpha Centauri preserves full wide separation and original Proxima photometry/spectrum");
+            var iotaCas = rows.Where(r => Get(r, "wds_id") == "02291+6724").ToArray();
+            Check(iotaCas.Length == 6 &&
+                iotaCas.Single(r => Get(r, "component_label") == "Aa")[columns["id"]] == "188568" &&
+                iotaCas.Where(r => Get(r, "component_label") is "Ab" or "B" or "Ca" or "Cb").All(r => Get(r, "component") == "C") &&
+                Get(iotaCas.Single(r => Get(r, "component_label") == "D"), "component") == "V",
+                "Iota Cas retains all five physical components Aa/Ab/B/Ca/Cb");
+            var iotaB = iotaCas.Single(r => Get(r, "component_label") == "B");
+            Check(Get(iotaB, "hd") == "" && Get(iotaB, "id") == "" &&
+                Get(iotaB, "mag") == "6.9199999999999999" &&
+                Get(iotaB, "relationships") == "A>B" &&
+                Get(iotaB, "rho_arcsec") == Program.F(2.980) &&
+                Get(iotaB, "theta_deg") == Program.F(230.80) &&
+                iotaCas.Single(r => Get(r, "component_label") == "Ab")[columns["rho_arcsec"]] == Program.F(0.601),
+                "Repeated system DM must not delete B, identify it as A, or exchange its measurements with Ab");
+            Check(rows.Any(r => Get(r, "id") == "1" && Get(r, "spect") == "K2III" && Get(r, "spect_src") == "HYG"),
+                "Known AT-HYG spectral classification and provenance override WDS");
+            Check(rows.Any(r => Get(r, "id") == "2" && Get(r, "spect") == "G0V" && Get(r, "spect_src") == "WDS"),
+                "Unknown AT-HYG spectrum and its missing-data provenance are replaced by component-specific WDS data");
+            Check(rows.Any(r => Get(r, "wds_id") == "01000+0000" && Get(r, "component_label") == "C" &&
+                Get(r, "id") == "" && Get(r, "spect") == "K7V" && Get(r, "spect_src") == "WDS"),
+                "WDS-only secondary receives its own spectrum");
+            Check(rows.Any(r => Get(r, "wds_id") == "02000+0000" && Get(r, "component_label") == "A" &&
+                Get(r, "spect") == "G2V") &&
+                rows.Where(r => Get(r, "wds_id") == "02000+0000" && Get(r, "component_label") != "A")
+                    .All(r => Get(r, "spect") == ""),
+                "A single WDS spectrum applies only to the first component");
+            Check(rows.Where(r => Get(r, "wds_id") is "07000+0000" or "10000+0000").All(r => Get(r, "spect") == ""),
+                "Blended endpoints and conflicting WDS spectra are not assigned to individual stars");
             Check(rows.Any(r => Get(r, "id") == "23" && Get(r, "wds_id") == "00300+0000" &&
                     Get(r, "component_label") == "B") &&
                 rows.Any(r => Get(r, "id") == "24" && Get(r, "wds_id") == "00300+0000" &&
@@ -389,7 +455,8 @@ internal static class CatalogTests
             File.WriteAllLines(orbitPath, [
                 OrbitRow("03000+0000"), OrbitRow("10000+0000"), OrbitRow("10000+0000", "AC"),
                 OrbitRow("05000+0000", "AC"), OrbitRow("05000+0000", "AC"),
-                OrbitRow("05000+0000", "AD", "9"), OrbitRow("07000+0000", "AB-CD")
+                OrbitRow("05000+0000", "AD", "9"), OrbitRow("07000+0000", "AB-CD"),
+                OrbitRow("02291+6724", "AD")
             ]);
             new Builder(temp, output).Run();
             Validation.Run(temp, output);
@@ -403,7 +470,7 @@ internal static class CatalogTests
                 bool promoted = Get(row, "wds_id") == "03000+0000" && Get(row, "component_label") == "B" ||
                     Get(row, "wds_id") == "10000+0000" && Get(row, "component_label") == "C";
                 Check(Get(row, "component") == (promoted ? "C" : Get(original, "component")),
-                    "Only supported plot-matched Q/V companions promoted; U/P and ambiguous/group/nonvisual matches unchanged.");
+                    "Only supported Q/V companions promoted; curated optical Iota D, U/P and ambiguous/group/nonvisual matches unchanged.");
                 Check(row.Where((_, i) => i != columns["component"]).SequenceEqual(
                     original.Where((_, i) => i != columns["component"])), "Orbital evidence changes classification only.");
             }
@@ -430,7 +497,7 @@ internal static class CatalogTests
                 PairRow("22000+0000", "AB", 11.1), PairRow("22000+0000", "Ba,Bb", 1.5, flags: "U")
             ]);
             File.WriteAllLines(orbitPath, [OrbitRow("22000+0000")]);
-            var promotions = OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource);
+            var promotions = OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource, []);
             var membershipRows = File.ReadLines(membershipCatalog).Skip(1).Select(Csv.Parse).ToArray();
             Check(promotions.GetValueOrDefault("V") == 1 &&
                 membershipRows.Select(r => Get(r, "component")).SequenceEqual(["P", "C", "V"]),
@@ -440,7 +507,7 @@ internal static class CatalogTests
                 MembershipRow("9002", "Ba", "U", "1", "A>B"),
                 MembershipRow("9003", "Bb", "V", "2", "Ba>Bb")
             ]);
-            Check(OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource).Count == 0,
+            Check(OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource, []).Count == 0,
                 "Original-pair evidence preserves identification-uncertain representatives.");
             File.WriteAllLines(membershipCatalog, [
                 Csv.Line(lines[0]), MembershipRow("9001", "A", "P", "", ""),
@@ -448,7 +515,7 @@ internal static class CatalogTests
                 MembershipRow("9003", "Bb", "V", "2", "Ba>Bb")
             ]);
             File.WriteAllLines(orbitPath, [OrbitRow("22000+0000"), OrbitRow("22000+0000")]);
-            Check(OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource).Count == 0,
+            Check(OrbitalClassification.Apply(membershipCatalog, orbitPath, membershipSource, []).Count == 0,
                 "Ambiguous supported orbits cannot classify parent-endpoint representatives.");
             string[] conflictingAlias = Csv.Parse(Star(18, 22, "", 5, 0));
             conflictingAlias[Array.IndexOf(header, "proper")] = "Fixture Primary";

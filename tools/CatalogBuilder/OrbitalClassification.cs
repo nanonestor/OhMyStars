@@ -37,11 +37,12 @@ internal static class OrbitalClassification
         return result;
     }
 
-    internal static Dictionary<string, long> Apply(string catalog, string orbits, string wdsSource)
+    internal static Dictionary<string, long> Apply(string catalog, string orbits, string wdsSource, HashSet<long> lockedRoles)
     {
         var companions = Companions(catalog, orbits, wdsSource);
         string[] header = Csv.Parse(File.ReadLines(catalog).First());
         int id = Array.IndexOf(header, "oms_id"), role = Array.IndexOf(header, "component");
+        int wds = Array.IndexOf(header, "wds_id"), label = Array.IndexOf(header, "component_label");
         Dictionary<string, long> promoted = [];
         string staging = catalog + ".tmp";
         using (var writer = new StreamWriter(staging))
@@ -50,7 +51,9 @@ internal static class OrbitalClassification
             foreach (string line in File.ReadLines(catalog).Skip(1))
             {
                 string[] row = Csv.Parse(line);
-                if (row[role] is "Q" or "V" && companions.Contains(long.Parse(row[id], Program.Invariant)))
+                if (row[role] is "Q" or "V" && companions.Contains(long.Parse(row[id], Program.Invariant)) &&
+                    !lockedRoles.Contains(long.Parse(row[id], Program.Invariant)) &&
+                    !Builder.IsCuratedVisualCompanion(row[wds], row[label]))
                 {
                     promoted[row[role]] = promoted.GetValueOrDefault(row[role]) + 1;
                     row[role] = "C";

@@ -312,7 +312,6 @@ AT40:1242802,flam,2,bf.txt:12043+2128:STF1596; individual endpoint A; alias 2 Co
 AT40:1279347,flam,35,bf.txt:12317-5925:GAA12; individual endpoint Aa; alias 35 Cru
 AT40:1425802,bayer,Iot,bf.txt:14190-0636:SHY71; individual endpoint A; alias iot Vir
 AT40:1425802,flam,99,bf.txt:14190-0636:SHY71; individual endpoint A; alias 99 Vir
-AT40:1440825,bayer,Alp,bf.txt:14396-6050:RHD1; individual endpoint A; alias alp Cen
 AT40:1464359,flam,17,bf.txt:14462-2111:FIN309; individual endpoint A; alias 17 Lib
 AT40:1541386,flam,178,bf.txt:15387-0847:STF1962; individual endpoint A; alias 178 Lib
 AT40:1542928,bayer,Pi,bf.txt:15396+7959:STF1989; individual endpoint A; alias pi UMi

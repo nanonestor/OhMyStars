@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.VisualBasic.FileIO;
 
 namespace OhMyStars;
@@ -80,13 +81,105 @@ internal sealed class MultipleStarCatalog {
 
     public IReadOnlyList<System> Systems { get; }
     public IReadOnlyDictionary<long, Star> Stars { get; }
+    public IReadOnlySet<long> DefinitivelyCorrectPrimaries { get; }
+#if DEBUG
+    internal sealed record ComponentReview(string DesiredType, string Notes);
+    public static readonly (string Type, string Label)[] ComponentReviewTypes = [
+        ("S", "S - Single"), ("P", "P - Primary"), ("C", "C - Companion"), ("V", "V - Visual"),
+        ("Q", "Q - Visual ?"), ("U", "U - Relationship Unknown"), ("unlink", "Remove / unlink")
+    ];
+    private static readonly string[] ReviewHeader = [
+        "primary_oms_id", "wds_id", "name", "approved", "component_oms_id",
+        "component_label", "original_type", "desired_type", "notes"
+    ];
+    private readonly Dictionary<long, bool> _approvalOverrides = new();
+    private readonly Dictionary<long, ComponentReview> _componentReviews = new();
+    private string? _approvalOverridesPath;
 
-    private MultipleStarCatalog(IReadOnlyList<System> systems, IReadOnlyDictionary<long, Star> stars) {
-        Systems = systems;
-        Stars = stars;
+    public ComponentReview? GetComponentReview(long componentId) =>
+        _componentReviews.GetValueOrDefault(componentId);
+
+    public void SetComponentReview(long primaryId, long componentId, string desiredType, string notes) {
+        if(!Stars.TryGetValue(componentId, out var component) ||
+            component["primary_oms_id"] != primaryId.ToString(CultureInfo.InvariantCulture) ||
+            component["system_id"] != primaryId.ToString(CultureInfo.InvariantCulture) ||
+            !Systems.Any(system => system.Primary.Id == primaryId))
+            throw new InvalidDataException($"OMS {componentId} is not a member of system OMS {primaryId}.");
+        if(!ComponentReviewTypes.Any(option => option.Type == desiredType))
+            throw new InvalidDataException($"Invalid desired component type '{desiredType}'.");
+        var updated = new Dictionary<long, ComponentReview>(_componentReviews);
+        if(desiredType == component.Role && notes.Length == 0)
+            updated.Remove(componentId);
+        else
+            updated[componentId] = new(desiredType, notes);
+        SaveReviews(_approvalOverrides, updated);
+        _componentReviews.Clear();
+        foreach(var (id, review) in updated)
+            _componentReviews.Add(id, review);
     }
 
-    public static MultipleStarCatalog Load(string path) {
+    public void SetDefinitiveApproval(long primaryId, bool approved) {
+        if(!Systems.Any(system => system.Primary.Id == primaryId && system.Primary.Role == "P"))
+            throw new InvalidDataException($"OMS {primaryId} is not an approvable system primary.");
+        var updated = new Dictionary<long, bool>(_approvalOverrides) { [primaryId] = approved };
+        SaveReviews(updated, _componentReviews);
+        _approvalOverrides[primaryId] = approved;
+        if(approved)
+            _definitivePrimaries.Add(primaryId);
+        else
+            _definitivePrimaries.Remove(primaryId);
+    }
+
+    private void SaveReviews(IReadOnlyDictionary<long, bool> approvals,
+        IReadOnlyDictionary<long, ComponentReview> components) {
+        if(_approvalOverridesPath is null)
+            throw new InvalidOperationException("Developer review storage is not configured.");
+        string temp = _approvalOverridesPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_approvalOverridesPath))!);
+            using(var writer = new StreamWriter(temp, false, new UTF8Encoding(false))) {
+                writer.WriteLine(string.Join(",", ReviewHeader));
+                void WriteRow(long primaryId, string approved, Star? component, ComponentReview? review) {
+                    Star primary = Stars[primaryId];
+                    string[] fields = [
+                        primaryId.ToString(CultureInfo.InvariantCulture), primary["wds_id"], ReviewName(primary),
+                        approved, component?.Id.ToString(CultureInfo.InvariantCulture) ?? "",
+                        component?.Label ?? "", component?.Role ?? "", review?.DesiredType ?? "", review?.Notes ?? ""
+                    ];
+                    writer.WriteLine(string.Join(",", fields.Select(QuoteCsv)));
+                }
+                foreach(var (id, value) in approvals.OrderBy(pair => pair.Key))
+                    WriteRow(id, value ? "true" : "false", null, null);
+                foreach(var (id, review) in components.OrderBy(pair => pair.Key)) {
+                    Star component = Stars[id];
+                    WriteRow(long.Parse(component["primary_oms_id"], CultureInfo.InvariantCulture), "", component, review);
+                }
+            }
+            File.Move(temp, _approvalOverridesPath, overwrite: true);
+        } finally {
+            if(File.Exists(temp))
+                File.Delete(temp);
+        }
+    }
+
+    private static string QuoteCsv(string text) => "\"" + text.Replace("\"", "\"\"") + "\"";
+
+    private static string ReviewName(Star primary) => !string.IsNullOrWhiteSpace(primary["proper"])
+        ? primary["proper"] : primary["hd"].Length > 0 ? "HD " + primary["hd"]
+        : "OMS " + primary.Id.ToString(CultureInfo.InvariantCulture);
+#endif
+    private readonly HashSet<long> _definitivePrimaries;
+
+    private MultipleStarCatalog(IReadOnlyList<System> systems, IReadOnlyDictionary<long, Star> stars,
+        HashSet<long> definitivelyCorrectPrimaries) {
+        Systems = systems;
+        Stars = stars;
+        DefinitivelyCorrectPrimaries = definitivelyCorrectPrimaries;
+        _definitivePrimaries = definitivelyCorrectPrimaries;
+    }
+
+    public static MultipleStarCatalog Load(string path, string? definitiveSystemsPath = null,
+        string? approvalOverridesPath = null) {
         using TextFieldParser parser = new(path) {
             TextFieldType = FieldType.Delimited,
             HasFieldsEnclosedInQuotes = true,
@@ -154,7 +247,71 @@ internal sealed class MultipleStarCatalog {
                 .ThenBy(s => s.Label, StringComparer.Ordinal).ToArray(),
                 measures.OrderByDescending(m => m.Year).ThenBy(m => m.SourceLine).ToArray()));
         }
-        return new MultipleStarCatalog(systems.OrderBy(s => s.Primary.Id).ToArray(), stars);
+        HashSet<long> definitivePrimaries = new();
+        if(definitiveSystemsPath is not null) {
+            using TextFieldParser reviews = new(definitiveSystemsPath) {
+                TextFieldType = FieldType.Delimited,
+                HasFieldsEnclosedInQuotes = true,
+                TrimWhiteSpace = false
+            };
+            reviews.SetDelimiters(",");
+            if(reviews.ReadFields() is not string[] reviewHeader ||
+                !reviewHeader.SequenceEqual(new[] { "primary_oms_id", "wds_id", "name" }))
+                throw new InvalidDataException("Invalid definitively-correct systems header.");
+            while(!reviews.EndOfData) {
+                string[] review = reviews.ReadFields() ?? throw new InvalidDataException("Missing system review row.");
+                if(review.Length != 3 || !long.TryParse(review[0], NumberStyles.None, CultureInfo.InvariantCulture, out long id) ||
+                    !stars.TryGetValue(id, out var primary) || primary.Role != "P" ||
+                    primary["system_id"] != review[0] || primary["wds_id"] != review[1] ||
+                    string.IsNullOrWhiteSpace(review[2]) || !definitivePrimaries.Add(id))
+                    throw new InvalidDataException($"Invalid or duplicate definitively-correct primary at line {reviews.LineNumber}.");
+            }
+        }
+        var catalog = new MultipleStarCatalog(systems.OrderBy(s => s.Primary.Id).ToArray(), stars, definitivePrimaries);
+#if DEBUG
+        catalog._approvalOverridesPath = approvalOverridesPath;
+        if(approvalOverridesPath is not null && File.Exists(approvalOverridesPath)) {
+            using TextFieldParser overrides = new(approvalOverridesPath) {
+                TextFieldType = FieldType.Delimited,
+                HasFieldsEnclosedInQuotes = true,
+                TrimWhiteSpace = false
+            };
+            overrides.SetDelimiters(",");
+            string[] overrideHeader = overrides.ReadFields() ?? throw new InvalidDataException("Missing developer review header.");
+            bool legacy = overrideHeader.SequenceEqual(new[] { "primary_oms_id", "wds_id", "name", "approved" });
+            if(!legacy && !overrideHeader.SequenceEqual(ReviewHeader))
+                throw new InvalidDataException("Invalid developer review overrides header.");
+            while(!overrides.EndOfData) {
+                string[] row = overrides.ReadFields() ?? throw new InvalidDataException("Missing developer review row.");
+                if(row.Length != overrideHeader.Length ||
+                    !long.TryParse(row[0], NumberStyles.None, CultureInfo.InvariantCulture, out long id) ||
+                    !stars.TryGetValue(id, out var primary) || primary.Role is not ("P" or "U") ||
+                    primary["system_id"] != row[0] || primary["wds_id"] != row[1] ||
+                    string.IsNullOrWhiteSpace(row[2]))
+                    throw new InvalidDataException($"Invalid developer review identity at line {overrides.LineNumber}.");
+                if(legacy || row[4].Length == 0) {
+                    if(primary.Role != "P" || !bool.TryParse(row[3], out bool approved) ||
+                        !legacy && row.Skip(4).Any(field => field.Length > 0) ||
+                        !catalog._approvalOverrides.TryAdd(id, approved))
+                        throw new InvalidDataException($"Invalid or duplicate developer approval override at line {overrides.LineNumber}.");
+                    if(approved)
+                        definitivePrimaries.Add(id);
+                    else
+                        definitivePrimaries.Remove(id);
+                } else {
+                    if(row[3].Length > 0 ||
+                        !long.TryParse(row[4], NumberStyles.None, CultureInfo.InvariantCulture, out long componentId) ||
+                        !stars.TryGetValue(componentId, out var component) || component["primary_oms_id"] != row[0] ||
+                        component["system_id"] != row[0] ||
+                        component.Label != row[5] || component.Role != row[6] ||
+                        !ComponentReviewTypes.Any(option => option.Type == row[7]) ||
+                        !catalog._componentReviews.TryAdd(componentId, new(row[7], row[8])))
+                        throw new InvalidDataException($"Invalid, stale or duplicate developer component review at line {overrides.LineNumber}.");
+                }
+            }
+        }
+#endif
+        return catalog;
     }
 
     private static string[] Split(string value) => value.Length == 0 ? [] : value.Split('|');
@@ -287,17 +444,37 @@ internal sealed class MultipleStarCatalog {
         IsEntryVisible(star, excludeWdsOnly, excludeVisual) && (star.Id == primary.Id || (overrides.TryGetValue(star.Id, out bool visible)
             ? visible : !IsDimComponent(star, primary, cutoff)));
 
+    private static double PlotPixelsPerArcsecond(double extent, double size, double zoom) =>
+        extent > 0 ? (size * 0.5 - 36) / extent * zoom : zoom;
+
+    public static (double Arcseconds, double Pixels)? PlotScaleBar(double extent, double size, double zoom) {
+        if(extent <= 0 || size <= 72 || zoom <= 0)
+            return null;
+        double scale = PlotPixelsPerArcsecond(extent, size, zoom);
+        double maxPixels = size - 24;
+        double arcseconds = Math.Pow(10, Math.Floor(Math.Log10(maxPixels / scale)));
+        return (arcseconds, arcseconds * scale);
+    }
+
     public static Offset PlotPosition(Offset offset, double extent, double size, double zoom, Offset pan) {
-        double scale = extent > 0 ? (size * 0.5 - 36) / extent * zoom : zoom;
+        double scale = PlotPixelsPerArcsecond(extent, size, zoom);
         return new(size * 0.5 - (offset.East - pan.East) * scale,
             size * 0.5 - (offset.North - pan.North) * scale);
     }
 
     public static (double? Ra, double? Dec) RelativeProperMotion(Star star, Star primary) {
-        if(star.Role is not ("V" or "Q"))
+        if(ReferenceEquals(star, primary))
             return (null, null);
         return (star.Number("pmra") - primary.Number("pmra"),
             star.Number("pmdec") - primary.Number("pmdec"));
+    }
+
+    public static double? RelativeProperMotionMagnitude(Star star, Star primary) {
+        var motion = RelativeProperMotion(star, primary);
+        if(motion.Ra is double ra && motion.Dec is double dec)
+            return Math.Sqrt(ra * ra + dec * dec);
+        return motion.Ra is double onlyRa ? Math.Abs(onlyRa) :
+            motion.Dec is double onlyDec ? Math.Abs(onlyDec) : null;
     }
 
     public static long? PickNearest(IEnumerable<Target> targets, float x, float y, float radius) {

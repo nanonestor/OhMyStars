@@ -83,13 +83,66 @@ supplies **Stars**, **Multi**, sky overlays and the default binary generator.
 The default magnitude/colour policy remains unchanged; an unfiltered binary
 also includes the catalog's many faint and WDS-only companion candidates.
 
+## Deep sky objects
+
+Open **Deep Sky** for the bundled OpenNGC NGC/IC catalog and addendum (14,033
+entries). Choose an object type, then a catalog (**All**, **NGC**, **IC**,
+**Messier**, **Other**), search names or identifiers, and select a result to see
+its cross-catalog IDs, available fields and notes. Empty search lists all matches;
+M40 and M45 are included from the addendum.
+
+Enable the desired object types to draw sky rings. Each row has an on/off
+checkbox, apparent-magnitude cutoff and color picker. Rings use V magnitude,
+or B when V is missing; lower numbers are brighter. Unknown magnitudes are
+included by default with a separate toggle. Catalog visibility checkboxes are
+independent of the search filters. All types start off, with cutoff 12.
+
+Mouse clicking starts enabled and selects drawn rings while this tab is open.
+Enable **Show enabled rings / outlines even when this tab / window is closed** to keep
+the overlay visible elsewhere; picking remains scoped to Deep Sky. Preferences
+persist across launches. Object-specific icons are not implemented yet.
+
+**Show nebula outlines** draws OpenNGC's supplied nebula silhouettes, independent
+of ring type/magnitude filters. Outlines share catalog visibility, type colors
+and display scope. Click inside a contour to inspect its nebula; clicking an
+object ring inside it always selects that ring's object instead. The snapshot
+provides 441 matched contours for 182 catalog objects; unmatched named regions
+are explicitly reported rather than guessed.
+
+See the [OpenNGC usage, attribution and licensing notes](catalogs/OpenNGC/README.md).
+The catalog data are **CC BY-SA 4.0**; the upstream MIT license text is retained
+but does not relicense the data.
+
 ## Multiple-star systems
+
+Developer **Debug** builds distinguish user-reviewed systems with bright-green
+primary highlight rings when unselected and a green **Definitively correct** label at the
+top-right of Multi. The persistent
+[review list](catalogs/definitively-correct-systems.csv) currently contains ten
+primaries. The selected primary's background highlight ring is yellow, overriding
+review green until another system is selected. Ordinary filters still apply.
+**Release** builds hide both review indicators
+and omit the review list; the catalog corrections remain. In Debug, use
+**Approve as correct** or **Undo approval** at the top of Multi to save a
+local review decision immediately. Local changes survive restarts and rebuilds.
+Each component also has a requested-type dropdown (including **Remove / unlink**)
+and a checkbox revealing an optional notes field. Selections and notes save
+in the same local developer CSV without changing the live catalog; system
+approval does not clear those requests. When ready, ask the assistant to apply
+your developer CSV in a batch, updating the catalog's curated rules and
+[catalog correction notes](catalogs/oms-notes.txt), and import system approvals
+into the repository review list. No pending count is displayed. See the
+[developer review notes](catalogs/README.md#developer-review-markers).
 
 Open **Multi** in the Oh My Stars window. Mouse picking defaults on; optionally
 enable **Highlight multi star systems** to see the eligible targets.
-The **Disable Mouse Clicking** button has a fixed label in **Stars** and **Multi**.
-A green dot to its left means mouse clicking is disabled. This toggle starts
+The shared top bar shows **Star Pointer** followed by **Disable Mouse Clicking**
+on every tab. Each button has green text and outline while enabled, otherwise
+white. Green **Disable Mouse Clicking** means mouse clicking is disabled. This toggle starts
 false on each launch, so mouse clicking is initially enabled.
+**Star Pointer** follows the current Stars or Multi selection, or the selected
+Deep Sky object's catalog position, even if its rings/outlines are hidden.
+It draws nothing on Settings/help screens or when no target position is available.
 With rings off, mouse selection works as in **Stars**, selecting ordinary stars
 as well as multiple-system primaries without leaving **Multi**. A star with no
 recorded companions shows only its name and RA/Dec, followed by
@@ -202,17 +255,16 @@ not change the selected star. In Stars, **Multiple Star info** switches to
 Multi when the selected star is a known system primary with a companion passing
 the current Multi component/provenance filters. At the top of Multi,
 the primary-ring checkbox is followed by a row containing a filter-expansion
-arrow and a **?** help button. The arrow reveals both apparent-magnitude
+arrow and a **? Information** help button. The arrow reveals both apparent-magnitude
 cutoff sliders and **Exclude WDS-only entries**; these controls start collapsed
-without changing their saved values. **?** opens the separate, closable
+without changing their saved values. **? Information** opens the separate, closable
 Multiple Star Help text window. A separator divides these controls from the names.
 
-Mouse selection defaults to enabled in both Stars and Multi, independently
-of the Stars search method. The top-right **Disable Mouse Select** button
-has a green **On** indicator; when disabled it becomes **Enable Mouse Select**.
-The disable button is an ordinary unpressed action button by default, not an
-enabled disable-toggle. Picking is suspended when the main window is closed,
-collapsed or showing Settings, and resumes on Stars/Multi if still enabled.
+Mouse selection defaults to enabled in Stars, Multi and Deep Sky, independently
+of the Stars search method. The top-right **Disable Mouse Clicking** toggle
+uses green text and outline when clicking is disabled, without a separate indicator.
+Picking is suspended when the main window is closed,
+collapsed or showing Settings, and resumes on Stars/Multi/Deep Sky if still enabled.
 Suspension does not change the user's mouse-selection preference and does not
 cancel separate Stars Editor picking sessions.
 Multi picking uses the existing cached magnitude/provenance eligibility filters,
@@ -246,7 +298,7 @@ overlays, regardless of plot-checkbox overrides. Q entries remain included.
 Systems without another eligible companion lose their highlight ring and ring
 click target. Hidden V components still participate in layout calculations so
 their dependent companions retain their positions. Catalog data is unchanged.
-The Multi tab's **?** button opens an information page inside the main mod
+The Multi tab's **? Information** button opens an information page inside the main mod
 window, like the Stars legend. **Back** at the top returns to Multi without
 changing the selected system or filters. The page explains companion
 classification, source catalogs and their limitations; it is not a separate
@@ -287,35 +339,80 @@ unanchored Ca-Cb pair remains listed normally if its internal separation is know
 The primary is never removed, and the WDS-only exclusion setting also applies
 to this summary. Catalog records are unchanged.
 
+Each component listing includes a **Spectral** column showing its recorded
+spectral classification when available; missing classifications are left blank.
+Known AT-HYG classifications take precedence; missing classifications are filled
+where WDS provides unambiguous individual-component spectra, including WDS-only
+stars. These additions carry `spect_src=WDS` in the catalog.
+
+Iota Cassiopeiae (Huagai) retains Aa, its close Ab, the separate wider B, and
+the physical Ca/Cb subsystem. B is restored with its own WDS measurements and
+reserved OMS ID, not by renaming Ab. The separate D entry is curated Visual (V); no
+outer C orbit is invented. See [catalog notes](catalogs/oms-notes.txt).
+
 For supported pairs, blue apparent relative-orbit curves are automatically
 overlaid without moving or replacing the measured component points. Orbit
-curves follow the companion's plot checkbox and are included in the fitted
+curves are anchored to their reference star's position in the OMS plot, not
+ORB6's absolute RA/Dec. The primary is the plot origin; other reference stars
+use their measured layout position (or the marked OMS RA/Dec approximation).
+Changing an absolute catalog sky position cannot by itself shift an orbit away
+from its plotted parent. For an eccentric relative orbit, the parent is at the
+projected focus, not necessarily the geometric center of the apparent ellipse.
+Curves follow the companion's plot checkbox and are included in the fitted
 extent. Curves are sampled once per selected system, not integrated each
 frame; runtime never downloads data. These are complete projected relative
 orbits, not a prediction for the game's date or individual barycentric paths.
+A scale bar with vertical end ticks and a label is drawn inside the plot at
+the bottom-left. Its arcsecond length is the largest power of ten (for example
+0.1, 1, 10 or 100) that fits the plot width with small side margins,
+selected for the current plot size and zoom using the same angular projection
+as the stars and orbit curves. Panning does not change the scale. No scale is
+shown for a primary-only plot with zero angular extent.
 Recorded WDS positions and fitted ORB6 solutions are independent and may disagree;
 a measured point is not snapped onto an orbit to conceal that disagreement.
+When a drawn companion's star disk does not touch its own orbit line, a note below
+the plot reads `* some orbit data and observed location data disagree`. Contact
+is checked against the drawn line segments using the star radius and line
+thickness at the current zoom. Hidden or off-screen companion markers do not
+trigger the note. Forcing a match would require changing the observed positions
+or distorting the supplied orbit.
 Only unique, complete grade 1–5 visual solutions matched to explicit
 individual component relationships are shown. Group/blended endpoints and
 ambiguous solutions are omitted rather than guessed. See the
 [ORB6 snapshot and limitations](catalogs/README.md#sixth-catalog-of-orbits-of-visual-binary-stars-orb6).
 
-Each member occupies one line: component label / recorded relationship (such
-as `A>B`), `App Mag:` and `Abs Mag:` (two decimal places), rho (arcseconds), then theta
-(degrees, both rho and theta to one decimal place), omitting
-empty/unknown values. Multiple stored measurements are pipe-separated.
+An aligned header bar labels the component columns: `Component / Rel`,
+`App Mag`, rho (arcseconds), Theta (degrees), `rel PM`, `Spectral`, and finally
+`Abs Mag`. Each member occupies one line containing values without repeated
+property names. B-V is not listed.
+The **Spectral** header is a button opening the same spectral legend as the
+Stars tab's **Legend** button beside its **Spectral** value. **Back** returns
+to the originating tab without resetting the selected system, filters, component
+checkboxes, zoom or pan. Saving settings while viewing the legend remembers its
+originating tab.
+Magnitudes use two decimal places; rho and theta use one. Empty/unknown values
+are omitted, except an undetermined relative proper motion is shown as `U`.
+Multiple stored measurements are pipe-separated.
+The rho and Theta headers prefix their names with their Greek symbols when the
+font supports them, with plain-text fallbacks. Their legend lines begin with the symbol
+followed by ` / rho:` or ` / theta:` and the explanation.
 An asterisk before the component label (including the primary) indicates
 `radec_source=WDS`: its catalog position is WDS-sourced rather than AT-HYG.
 This marker is for the information list only, not a change to plot labels or IDs.
 The rho/theta legend sits between separators below the component list and above
 the plot. It uses separate short lines, with `* = WDS only sourced entry`
 shown only when at least one listed member has a WDS-sourced position.
+Members without position data remain listed for research, but have no plotted
+position or visibility checkbox.
 V members show `(Visual)` instead of the relationship; Q (Questionable) members
 show `(Visual ?)`; U members show
 `(Relationship Unknown)`.
-Only Visual and Questionable members show proper motion: component minus primary, per axis,
-in mas/year, and only when both values are available. Primaries and true
-companions do not show proper motion. Supported ORB6 companions with exact
+Every displayed non-primary member can show relative proper motion in mas/year,
+regardless of component category, when at least one relative axis is available.
+Each axis is component minus primary. The displayed amount is sqrt(RA^2 + Dec^2)
+when both relative axes are available, or the absolute value of the single
+available relative axis; `U` means neither axis is available. The primary's
+self-relative motion is undetermined. Supported ORB6 companions with exact
 individual-pair plot matches, or exact original WDS pair matches to the
 measurement-owning representative leaf, are classified C rather than Q/V
 during catalog generation (primary and identification-uncertain roles remain
@@ -438,6 +535,17 @@ Each record has 36 fixed bytes followed by the variable-length name. The sister 
 - On first run the mod generates `binaries\OhMyStars_stars.bin` (plus its identity file `binaries\OhMyStars__stars_IDs.bin`) from `catalogs\oms_catalog.csv` using magnitude scale `0.15` and selects it as the only active star binary. Existing default binaries from an older generation version are rebuilt automatically on launch; other generated binaries are left unchanged. The old reduced AT-HYG CSV is not shipped, and stale copies are removed from build/deployment output. Generated identity records use OMS IDs as their catalog ID; always-include ID matching prefers `oms_id` (falling back to `id` for imported non-OMS CSVs).
 - `.bin` files anywhere in each mod folder, including subfolders such as `binaries`, are listed. Identity sister files are skipped.
 - Enabling a binary that has no Oh My Stars identity file shows a confirmation. Confirming switches to **vanilla mode**: the mod's star transforms and sky overlays are disabled, and the stars render as the game normally draws them. Selecting only Oh My Stars binaries turns the mod's features back on.
+
+## Hubble tube part
+
+The mod ships a full-scale Hubble-style optical tube assembly as a vehicle
+editor part (`OMS Optical Tube Assembly`, Structural category), with
+attachment connectors where the real telescope's solar panels, high-gain
+antennas, and axial hardware mount. Meshes, textures, and part XML are
+generated from scripts in [parts/hubble](parts/hubble/README.md);
+`tools\PartBundler` runs the game's own GLB import pipeline so the part XML
+always matches the installed game version. General notes on building KSA
+parts are in [docs/custom-parts.md](docs/custom-parts.md).
 
 ## Building and game source reference
 

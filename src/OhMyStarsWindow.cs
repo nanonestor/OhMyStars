@@ -16,7 +16,9 @@ internal static class OhMyStarsWindow {
         Information,
         SpectrumLegend,
         Multi,
-        MultiHelp
+        MultiHelp,
+        DeepSky,
+        Telescope
     }
 
     // Keep Information's persisted enum value while displaying the tab as Stars.
@@ -65,6 +67,7 @@ internal static class OhMyStarsWindow {
     private static bool _starPointerExpanded = false;
     private static bool _alignmentExpanded = false;
     private static WindowDisplay _display = WindowDisplay.Settings;
+    private static WindowDisplay _spectrumLegendReturnTab = WindowDisplay.Information;
     private static StarSelectionMode _starSelectionMode = StarSelectionMode.All;
     private static string? _selectedConstellationId;
 
@@ -158,7 +161,8 @@ internal static class OhMyStarsWindow {
     }
 
     private static void SuspendMousePicker() {
-        if(StarPicker.IsActiveFor(MousePickerOwner) || MultipleStarView.IsMousePickerActive)
+        DeepSkyView.FlushPendingSettings(force: true);
+        if(StarPicker.IsActiveFor(MousePickerOwner) || MultipleStarView.IsMousePickerActive || DeepSkyView.IsMousePickerActive)
             StarPicker.Cancel();
     }
 
@@ -185,6 +189,7 @@ internal static class OhMyStarsWindow {
         }
 
         Dictionary<string, string> values = ReadSettingsFile(settingsPath);
+        DeepSkyView.Settings = DeepSkySettings.Read(values);
 
         _showWindow = ReadBool(values, "ShowWindow", true);
         StarsEditWindow.IsOpen = ReadBool(values, "ShowStarEditor", true);
@@ -299,12 +304,13 @@ internal static class OhMyStarsWindow {
             $"StarPointerRainbow={StellariumRenderer.starPointerRainbow.ToString(CultureInfo.InvariantCulture)}",
         };
 
-        File.WriteAllLines(settingsPath, lines);
+        File.WriteAllLines(settingsPath, lines.Concat(DeepSkyView.Settings.Serialize()));
         _savedShowWindow = _showWindow;
         _savedShowStarEditor = StarsEditWindow.IsOpen;
     }
 
     private static void ResetToDefaults() {
+        DeepSkyView.Settings = new();
         MultipleStarView.ShowPrimaryRings = false;
         MultipleStarView.LimitRingsToCenter = false;
         MultipleStarView.RingRadiusPercent = MultipleStarView.DefaultRingRadiusPercent;
@@ -340,7 +346,9 @@ internal static class OhMyStarsWindow {
     }
 
     public static void Draw() {
+        DeepSkyView.FlushPendingSettings();
         MultipleStarView.TabVisible = false;
+        DeepSkyView.TabVisible = false;
         if(!_showWindow) {
             SuspendMousePicker();
             return;
@@ -362,35 +370,38 @@ internal static class OhMyStarsWindow {
 
         ConsoleStyle.PushWidgetStyle();
 
+        // Top bar line 1: utility toggles (left), telescope electrical readout (right).
+        if(DrawTopBarToggle("Star Pointer", _showStarPointer))
+            _showStarPointer = !_showStarPointer;
+        ImGui.SameLine();
+        if(DrawTopBarToggle("Disable Mouse Clicking", _disableMouseClicking)) {
+            _disableMouseClicking = !_disableMouseClicking;
+            if(!MousePointerEnabled)
+                SuspendMousePicker();
+        }
+        if(TelescopeView.TelescopePresent) {
+            ImGui.SameLine();
+            TelescopeView.DrawWindowStatus();
+        }
+
+        // Top bar line 2: tab buttons.
         DrawTabButton("Settings", WindowDisplay.Settings);
         ImGui.SameLine();
         DrawTabButton("Stars", WindowDisplay.Information);
         ImGui.SameLine();
         DrawTabButton("Multi", WindowDisplay.Multi);
-        if(_display is not (WindowDisplay.Information or WindowDisplay.Multi) || StarsEditWindow.VanillaMode)
-            SuspendMousePicker();
-        if(_display is WindowDisplay.Information or WindowDisplay.Multi) {
-            const string pointerLabel = "Disable Mouse Clicking";
-            float dotSize = ImGui.GetFrameHeight();
-            float controlsWidth = ImGui.CalcTextSize(pointerLabel).X + ImGui.GetStyle().FramePadding.X * 2 +
-                (_disableMouseClicking ? dotSize + ImGui.GetStyle().ItemSpacing.X : 0);
+        ImGui.SameLine();
+        DrawTabButton("Deep Sky", WindowDisplay.DeepSky);
+        if(TelescopeView.TelescopePresent) {
             ImGui.SameLine();
-            ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(),
-                ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - controlsWidth));
-            if(_disableMouseClicking) {
-                float2 dotCenter = ImGui.GetCursorScreenPos() + new float2(dotSize * 0.5f);
-                ImDrawListExtensions.AddCircleFilled(ImGui.GetWindowDrawList(), dotCenter, dotSize * 0.15f,
-                    new ImColor8(0, 255, 140, 255), 0);
-                ImGui.Dummy(new float2(dotSize));
-                ImGui.SameLine();
-            }
-            if(ImGui.Button(pointerLabel)) {
-                _disableMouseClicking = !_disableMouseClicking;
-                if(!MousePointerEnabled)
-                    SuspendMousePicker();
-            }
+            DrawTabButton("Telescope", WindowDisplay.Telescope);
         }
-        ImGui.Separator();
+        else if(_display == WindowDisplay.Telescope) {
+            _display = WindowDisplay.Settings;
+        }
+        if(_display is not (WindowDisplay.Information or WindowDisplay.Multi or WindowDisplay.DeepSky) || StarsEditWindow.VanillaMode)
+            SuspendMousePicker();
+        DrawThickSeparator();
 
         if(StarsEditWindow.VanillaMode) {
             ImGui.TextColored(in ConsoleStyle.Pending, "Vanilla mode: a non-OhMyStars star binary is loaded.");
@@ -411,6 +422,19 @@ internal static class OhMyStarsWindow {
             ImGui.End();
             return;
         }
+        if(_display == WindowDisplay.DeepSky) {
+            DeepSkyView.TabVisible = true;
+            DeepSkyView.Draw();
+            ConsoleStyle.PopWidgetStyle();
+            ImGui.End();
+            return;
+        }
+        if(_display == WindowDisplay.Telescope) {
+            TelescopeView.Draw();
+            ConsoleStyle.PopWidgetStyle();
+            ImGui.End();
+            return;
+        }
         if(_display == WindowDisplay.Information) {
             DrawInformation();
             ConsoleStyle.PopWidgetStyle();
@@ -423,47 +447,74 @@ internal static class OhMyStarsWindow {
             ImGui.End();
             return;
         }
-
+        ImGui.NewLine();
+        ImGui.Text("Main Toggles");
         bool showStarNamesTop = StellariumRenderer.showStarNames;
-        ConsoleWidgets.BeginRow("Show Star Names");
-        if(ConsoleWidgets.Checkbox("ShowStarNames", ref showStarNamesTop, pending: false)) {
-            StellariumRenderer.showStarNames = showStarNamesTop;
+        // ConsoleWidgets.BeginRow("Show Star Names");
+        // if(ConsoleWidgets.Checkbox("ShowStarNames", ref showStarNamesTop, pending: false)) {
+        //     StellariumRenderer.showStarNames = showStarNamesTop;
+        //     SaveSettings();
+        // }
+        // Now instead we're going to make thes settings as buttons rather than checkboxes.  For now repurpose drawtopbartoggle
+        // indents the following toggle two spaces
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+        if(DrawTopBarToggle("Show Star Names", showStarNamesTop)) {
+            StellariumRenderer.showStarNames = !showStarNamesTop;
             SaveSettings();
         }
-        ConsoleWidgets.EndRow();
 
-        bool showAsterismNamesTop = StellariumRenderer.showAsterismNames;
-        ConsoleWidgets.BeginRow("Show Constellation Names");
-        if(ConsoleWidgets.Checkbox("ShowNames", ref showAsterismNamesTop, pending: false)) {
-            StellariumRenderer.showAsterismNames = showAsterismNamesTop;
+        // bool showAsterismNamesTop = StellariumRenderer.showAsterismNames;
+        // ConsoleWidgets.BeginRow("Show Constellation Names");
+        // if(ConsoleWidgets.Checkbox("ShowNames", ref showAsterismNamesTop, pending: false)) {
+        //     StellariumRenderer.showAsterismNames = showAsterismNamesTop;
+        //     SaveSettings();
+        // }
+        // ConsoleWidgets.EndRow();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+        if(DrawTopBarToggle("Show Constellation Names", StellariumRenderer.showAsterismNames)) {
+            StellariumRenderer.showAsterismNames = !StellariumRenderer.showAsterismNames;
             SaveSettings();
         }
-        ConsoleWidgets.EndRow();
 
-        bool showAsterismsTop = StellariumRenderer.showAsterisms;
-        ConsoleWidgets.BeginRow("Show Asterisms");
-        if(ConsoleWidgets.Checkbox("ShowAsterisms", ref showAsterismsTop, pending: false)) {
-            StellariumRenderer.showAsterisms = showAsterismsTop;
+        // bool showAsterismsTop = StellariumRenderer.showAsterisms;
+        // ConsoleWidgets.BeginRow("Show Asterisms");
+        // if(ConsoleWidgets.Checkbox("ShowAsterisms", ref showAsterismsTop, pending: false)) {
+        //     StellariumRenderer.showAsterisms = showAsterismsTop;
+        //     SaveSettings();
+        // }
+        // ConsoleWidgets.EndRow();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+        if(DrawTopBarToggle("Show Asterisms", StellariumRenderer.showAsterisms)) {
+            StellariumRenderer.showAsterisms = !StellariumRenderer.showAsterisms;
             SaveSettings();
         }
-        ConsoleWidgets.EndRow();
 
-        bool showIAUConstellationsTop = StellariumRenderer.showIAUConstellations;
-        ConsoleWidgets.BeginRow("Show Constellation Boundaries");
-        if(ConsoleWidgets.Checkbox("ShowConstellationBoundaries", ref showIAUConstellationsTop, pending: false)) {
-            StellariumRenderer.showIAUConstellations = showIAUConstellationsTop;
+        // bool showIAUConstellationsTop = StellariumRenderer.showIAUConstellations;
+        // ConsoleWidgets.BeginRow("Show Constellation Boundaries");
+        // if(ConsoleWidgets.Checkbox("ShowConstellationBoundaries", ref showIAUConstellationsTop, pending: false)) {
+        //     StellariumRenderer.showIAUConstellations = showIAUConstellationsTop;
+        //     SaveSettings();
+        // }
+        // ConsoleWidgets.EndRow();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+        if(DrawTopBarToggle("Show Constellation Boundaries", StellariumRenderer.showIAUConstellations)) {
+            StellariumRenderer.showIAUConstellations = !StellariumRenderer.showIAUConstellations;
             SaveSettings();
         }
-        ConsoleWidgets.EndRow();
 
-        bool showRaDecGridTop = StellariumRenderer.showRaDecGrid;
-        ConsoleWidgets.BeginRow("Show RA/Dec Grid");
-        if(ConsoleWidgets.Checkbox("ShowRaDecGrid", ref showRaDecGridTop, pending: false)) {
-            StellariumRenderer.showRaDecGrid = showRaDecGridTop;
+        // bool showRaDecGridTop = StellariumRenderer.showRaDecGrid;
+        // ConsoleWidgets.BeginRow("Show RA/Dec Grid");
+        // if(ConsoleWidgets.Checkbox("ShowRaDecGrid", ref showRaDecGridTop, pending: false)) {
+        //     StellariumRenderer.showRaDecGrid = showRaDecGridTop;
+        //     SaveSettings();
+        // }
+        // ConsoleWidgets.EndRow();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+        if(DrawTopBarToggle("Show RA/Dec Grid", StellariumRenderer.showRaDecGrid)) {
+            StellariumRenderer.showRaDecGrid = !StellariumRenderer.showRaDecGrid;
             SaveSettings();
         }
-        ConsoleWidgets.EndRow();
-
+        ImGui.NewLine();
         DrawThickSeparator();
         DrawSectionHeader("Spectral Filter", "Shows spectral types beside matching stars in the sky. Select one or more spectral classes and a maximum catalog distance from the solar-system origin.", ref _spectralFilterExpanded);
         if(_spectralFilterExpanded) {
@@ -471,12 +522,17 @@ internal static class OhMyStarsWindow {
             BeginEntryIndent();
 
             bool filterBySpectral = StellariumRenderer.filterBySpectral;
-            ConsoleWidgets.BeginRow("Filter by Spectral");
-            if(ConsoleWidgets.Checkbox("FilterBySpectral", ref filterBySpectral, pending: false)) {
-                StellariumRenderer.filterBySpectral = filterBySpectral;
+            // ConsoleWidgets.BeginRow("Filter by Spectral");
+            // if(ConsoleWidgets.Checkbox("FilterBySpectral", ref filterBySpectral, pending: false)) {
+            //     StellariumRenderer.filterBySpectral = filterBySpectral;
+            //     SaveSettings();
+            // }
+            // ConsoleWidgets.EndRow();
+            // makes it as a button like the other settings
+            if(DrawTopBarToggle("Show Spectral Types", StellariumRenderer.filterBySpectral)) {
+                StellariumRenderer.filterBySpectral = !StellariumRenderer.filterBySpectral;
                 SaveSettings();
             }
-            ConsoleWidgets.EndRow();
 
             int spectralMask = StellariumRenderer.spectralTypeMask;
             bool spectralTypesChanged = false;
@@ -512,8 +568,6 @@ internal static class OhMyStarsWindow {
             }
             EndEntryIndent();
         }
-
-        ImGui.NewLine();
         DrawThickSeparator();
         DrawSectionHeader("Sky Culture", "Selects the Stellarium sky culture that provides the asterism lines, constellation names, and star labels.", ref _skyCultureExpanded);
 
@@ -643,7 +697,7 @@ internal static class OhMyStarsWindow {
         }
 
         DrawThickSeparator();
-        DrawSectionHeader("Star Pointer", "Point from the window to the selected star.", ref _starPointerExpanded);
+        DrawSectionHeader("Star Pointer", "Point from the window to the current tab's selected object.", ref _starPointerExpanded);
 
         if(_starPointerExpanded) {
             ImGui.Separator();
@@ -733,7 +787,7 @@ internal static class OhMyStarsWindow {
     // style the Alignment section uses ("v" expanded, ">" collapsed), plus the "(?)" help tooltip.
     // The button is indented two text spaces from the left edge to visually set it apart.
     private static void DrawSectionHeader(string title, string helpText, ref bool expanded) {
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
+       // ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.CalcTextSize("  ").X);
 
         if(ImGui.Button(expanded ? title + " v" : title + " >")) {
             expanded = !expanded;
@@ -849,9 +903,37 @@ internal static class OhMyStarsWindow {
             : ConsoleWidgets.Button(label, label, default);
 
         if(clicked && !selected) {
+            SuspendMousePicker();
             _display = tab;
             SaveSettings();
         }
+    }
+
+    public static bool DrawTopBarToggle(string label, bool enabled) {
+        ConsoleStyle.PushLabelFont();
+        float2 textSize = ImGui.CalcTextSize(label);
+        float fontSize = ImGui.GetFontSize();
+        ConsoleStyle.PopFont();
+        float2 size = new(textSize.X + ConsoleWidgets.ButtonHorizontalPaddingPx * 2f,
+            fontSize + ConsoleWidgets.ButtonVerticalPaddingPx * 2f);
+        float2 pMin = ImGui.GetCursorScreenPos();
+        float2 pMax = pMin + size;
+        bool clicked = ImGui.InvisibleButton(new ImString(label), in size, ImGuiButtonFlags.None);
+        bool hovered = ImGui.IsItemHovered();
+        uint border = ConsoleStyle.ApplyAlpha(enabled ? ConsoleStyle.PositiveU32 : ConsoleStyle.FrameU32);
+        uint text = ConsoleStyle.ApplyAlpha(enabled ? ConsoleStyle.PositiveU32 : ConsoleStyle.TextLabelU32);
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        drawList.AddRect(in pMin, in pMax, border, ConsoleStyle.FrameRoundingPx, ImDrawFlags.None,
+            ConsoleStyle.WindowBorderThicknessPx);
+        // now if hovered over the button make the button border lighter
+        if(hovered && !enabled) {
+            border = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
+        }
+        drawList.AddRect(in pMin, in pMax, ConsoleStyle.ApplyAlpha(border), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+        ConsoleStyle.PushLabelFont();
+        drawList.AddText(pMin + (size - textSize) * 0.5f, text, label);
+        ConsoleStyle.PopFont();
+        return clicked;
     }
 
     // Same layout/rounding/padding as ConsoleWidgets' filled buttons (see PrimaryButton in
@@ -979,20 +1061,6 @@ internal static class OhMyStarsWindow {
         } else {
             _dropdownLabelHip = star.Hip;
             _dropdownLabelName = starDisplayName;
-        }
-
-        if(_showStarPointer) {
-            if(ConsoleWidgets.PositiveButton("Star Pointer", "StarPointer", default)) {
-                _showStarPointer = false;
-            }
-        } else {
-            if(ConsoleWidgets.Button("Star Pointer", "StarPointer", default)) {
-                _showStarPointer = true;
-            }
-        }
-        if(_showStarPointer) {
-            ImGui.SameLine();
-            ImGui.TextColored(in ConsoleStyle.Positive, "Pointer On");
         }
 
         ImGui.NewLine();
@@ -1644,11 +1712,24 @@ internal static class OhMyStarsWindow {
         vehicle.FlightComputer.CustomAttitudeTarget = new double3(roll, yaw, pitch);
     }
 
-    public static bool TryGetStarPointer(out int hip, out float2 windowPosition, out float2 windowSize) {
-        hip = _selectedStarHip;
+    public static bool TryGetStarPointer(out int hip, out double3? catalogDirection,
+        out float2 windowPosition, out float2 windowSize) {
+        hip = 0;
+        catalogDirection = null;
         windowPosition = _windowPosition;
         windowSize = _windowSize;
-        return _showWindow && _showStarPointer && hip > 0;
+        if(!_showWindow || !_showStarPointer)
+            return false;
+        if(_display == WindowDisplay.DeepSky) {
+            if(!DeepSkyView.TryGetSelectedDirection(out double3 direction))
+                return false;
+            catalogDirection = direction;
+            return true;
+        }
+        if(_display is not (WindowDisplay.Information or WindowDisplay.Multi))
+            return false;
+        hip = _selectedStarHip;
+        return hip > 0;
     }
 
     // Screen rect currently occupied by the mod's own window, so the navball marker can hide
@@ -1661,14 +1742,14 @@ internal static class OhMyStarsWindow {
 
     private static void DrawSpectrumInformationValue(string spectralType) {
         float2 rowPosition = ImGui.GetCursorScreenPos();
-        ConsoleWidgets.BeginRow("Spectrum");
+        ConsoleWidgets.BeginRow("Spectral");
         float2 valuePosition = ImGui.GetCursorScreenPos();
 
         ImGui.SetCursorScreenPos(new float2(
-            rowPosition.X + ImGui.CalcTextSize("Spectrum ").X + 8f,
+            rowPosition.X + ImGui.CalcTextSize("Spectral ").X + 8f,
             rowPosition.Y));
         if(ImGui.SmallButton("(Legend)")) {
-            _display = WindowDisplay.SpectrumLegend;
+            OpenSpectrumLegend();
         }
 
         ImGui.SetCursorScreenPos(valuePosition);
@@ -1678,7 +1759,7 @@ internal static class OhMyStarsWindow {
 
     private static void DrawSpectrumLegend() {
         if(ImGui.Button("Back")) {
-            _display = WindowDisplay.Information;
+            _display = _spectrumLegendReturnTab;
             return;
         }
 
@@ -1911,6 +1992,11 @@ internal static class OhMyStarsWindow {
 
     internal static void CloseMultipleStarHelp() => _display = WindowDisplay.Multi;
 
+    internal static void OpenSpectrumLegend() {
+        _spectrumLegendReturnTab = _display == WindowDisplay.Multi ? WindowDisplay.Multi : WindowDisplay.Information;
+        _display = WindowDisplay.SpectrumLegend;
+    }
+
     // Informational sub-views are persisted as their parent tabs.
     private static WindowDisplay NormalizeTab(WindowDisplay display) {
         return display switch {
@@ -1921,7 +2007,7 @@ internal static class OhMyStarsWindow {
     }
 
     private static WindowDisplay GetPersistableTab() {
-        return NormalizeTab(_display);
+        return _display == WindowDisplay.SpectrumLegend ? _spectrumLegendReturnTab : NormalizeTab(_display);
     }
 
     private static float ReadFloat(Dictionary<string, string> values, string key, float defaultValue) {

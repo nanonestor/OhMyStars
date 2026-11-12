@@ -77,3 +77,30 @@ and the supplied catalogs/orb6format.txt.
 No standalone redistribution license was identified on the inspected source
 pages. Confirm applicable terms before public distribution; the mod and
 AT-HYG licenses do not relicense these third-party data.
+
+5. catalogs/OpenNGC/
+
+OpenNGC, by Mattia Verga and the contributors listed in the included AUTHORS.
+URL: https://github.com/mattiaverga/OpenNGC
+Copyright 2023 Mattia Verga, per the included .reuse/dep5 declaration.
+
+The NGC/IC and addendum database CSVs are distributed unmodified under
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
+See catalogs/OpenNGC/LICENSES/CC-BY-SA-4.0.txt.
+The upstream MIT license text is retained in catalogs/OpenNGC/LICENSES/MIT.txt;
+it does not replace the catalog data's CC BY-SA 4.0 license.
+
+Upstream source acknowledgments include NED (NASA/IPAC Extragalactic
+Database), HyperLEDA, SIMBAD (CDS, Strasbourg), HEASARC and Harold Corwin's
+NGC/IC Positions and Notes. Full acknowledgments, source-code definitions,
+snapshot hashes and usage limitations are in catalogs/OpenNGC/README.md,
+UPSTREAM-README.md and NGC_guide.txt. The upstream README was renamed only;
+the database, guide, authors and license files are otherwise unchanged.
+
+The upstream outlines/outlines_stellarium.dat and outlines/metodology.txt
+are also distributed unmodified under the OpenNGC CC BY-SA 4.0 declaration.
+Oh My Stars matches their named contours to database identifiers; unmatched
+regions are reported and omitted rather than assigned to unrelated objects.
+This research has made use of "Aladin sky atlas" developed at CDS,
+Strasbourg Observatory, France. See the included methodology for the
+DSS2 Color tracing and simplification process used by OpenNGC.

@@ -57,7 +57,9 @@ internal sealed partial class Builder
                     Fill(first, "hip", hip, $"hds.txt:{pair.Wds}:{pair.Discoverer}; individual endpoint {pair.First}");
                 string raw = _wdsSource[pair.Line];
                 string dm = WdsDm(raw.Substring(98, 8));
-                if (dm.Length > 0 && _hdByDm.TryGetValue(dm, out var ids) && ids.Count == 1)
+                // STF 262 BC repeats A's system DM; it does not identify the separate B star.
+                if (!(pair.Wds == "02291+6724" && pair.First == "B") &&
+                    dm.Length > 0 && _hdByDm.TryGetValue(dm, out var ids) && ids.Count == 1)
                     Fill(first, "hd", ids.Single(), $"WDS DM {dm} -> III/135A exact unique DM");
             }
             foreach (string note in system.Notes)

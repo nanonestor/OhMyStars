@@ -1,0 +1,540 @@
+OMS COMPONENT IDENTITY CONFLICTS - EDITABLE RESEARCH AND DECISIONS
+Audit date: 2026-10-21 (local time)
+
+PURPOSE
+Iota Cassiopeiae B disappeared because a repeated system-level WDS DM identifier
+was interpreted as that component's own HD identity. The linked AT-HYG row
+already represented Aa, so identifier enrichment dropped B and its relationships.
+Iota Cas B has been corrected separately; it is NOT one of the open cases below.
+
+This audit found 59 further omission events across 58 WDS systems:
+47 DM-to-HD conflicts and 12 HDS-to-HIP conflicts. These are candidates for
+research, NOT 59 proven missing physical companions. Some may be valid duplicate
+identifications or cross-system aliases. Removing one disputed endpoint also
+removes its incident pair measurements and can remove other, orphaned components
+or an entire system. Research the complete local hierarchy, not just the label.
+
+WHAT TO EDIT
+For each entry, fill in Decision, Evidence, and Notes. Suggested decisions:
+  PENDING - not researched.
+  RESTORE - distinct star; retain its WDS identity/measurements and reject the
+            misleading identifier link. Specify C, V, Q, or U only with evidence.
+  KEEP OMITTED - genuine duplicate; name the retained OMS/AT-HYG identity.
+  REASSIGN - wrong match or label; give the correct identities and source pairs.
+  NEEDS MORE EVIDENCE - unresolved; do not change catalog behavior yet.
+A decision should distinguish identity, component label, and physical membership.
+Not being part of a physical system does not mean an optical V entry is deleted.
+Include URLs, publication references, source rows, and any measured separations
+or magnitudes supporting your conclusion. Do not invent missing measurements.
+
+HOW TO CONTINUE LATER
+Ask the coding assistant to read this file and apply ONLY entries with explicit
+decisions, preserving unresolved entries. This file is not automatically executed
+or regenerated. Do not make corrections only in oms_catalog.csv: implement them
+in tools\CatalogBuilder so the next regeneration preserves them.
+Relevant code:
+  tools\CatalogBuilder\Identifiers.cs: EnrichIdentifiers and
+      OmitDuplicateRelationships (the identifier enrichment/deletion stage).
+  tools\CatalogBuilder\IdentityMatching.cs: initial component identification.
+  tools\CatalogBuilder\Program.cs: curated roles, identity checks and manifest.
+  tools\CatalogBuilder\Validation.cs and CatalogTests.cs: source/role checks.
+  tools\MultiTests\Program.cs: real-system identities and plot geometry.
+Document accepted special cases in catalogs\oms-notes.txt and add regression
+tests. Preserve known AT-HYG fields, original WDS pair measurements, and reserved
+OMS IDs in identity-registry.csv. A primary/wide-pair identifier may identify a
+whole unresolved subsystem; do not assign it to every leaf.
+Run CatalogBuilder --self-test, regenerate with catalogs\Generate.ps1, and
+validate the regenerated catalog. Verify affected Multi layouts. The real-catalog
+Multi run currently has an unrelated Albireo-name lookup failure after orbit
+checks; distinguish it from new failures. Deploy only when the game releases its
+DLL lock and preserve installed settings.
+
+SOURCE AND FIELD GUIDE
+Local source root: D:\ksa\stars\catalogs
+WDS: WDS\wds_precise.txt and WDS\wdsnewnotes_main.txt.
+HIP links: WDS\hds.txt. DM-to-HD links: Henry Draper\catalog.dat.
+AT-HYG: AT-HYG_40\athyg_40.csv.
+Snapshot hashes: catalogs\build-manifest.json.
+AT40 is an AT-HYG row ID, NOT an OMS ID. Lookup the corresponding OMS row in
+oms_catalog.csv or registry key AT40:<id> in identity-registry.csv.
+The candidate key WDS:<system>:<component> can also have a reserved OMS ID even
+when absent from the current catalog; do not allocate a different ID.
+Below, "linked" gives the already-assigned AT-HYG row and its WDS component.
+"Source" gives selected 1-based wds_precise.txt row numbers, discoverer/pair,
+rho in arcseconds and theta in degrees; these are input data, not endorsements.
+Read all records/notes for each WDS ID. Theta=-1 is an unknown sentinel, NOT a
+measured angle. Source pair letters may represent blended groups.
+No general identifier safeguard or bulk restoration was applied for these cases.
+
+01. WDS:00315-6257:G
+Linked: AT40:24660, WDS 00184-6329 A; HD 1466.
+Trigger: system DM CP-64:17 -> HD 1466.
+Source: 3016 SHY 113 GH, rho=616.053, theta=21.80; 3017 CVN 33 GI, rho=10.218, theta=232.50.
+Decision: PENDING
+Evidence:
+Notes: Cross-system link; determine whether this is a genuine shared star.
+
+02. WDS:01106+5101:B
+Linked: AT40:90282, WDS 01106+5101 Aa; HD 6918.
+Trigger: system DM BD+50:228 -> HD 6918.
+Source: 6692 BU 235 BD, rho=9.380, theta=77.10.
+Decision: PENDING
+Evidence:
+Notes:
+
+03. WDS:01106+5101:C
+Linked: AT40:90282, WDS 01106+5101 Aa; HD 6918.
+Trigger: system DM BD+50:228 -> HD 6918.
+Source: 6693 STT 24 CE, rho=7.900, theta=46.90.
+Decision: PENDING
+Evidence:
+Notes: Same system as entry 02; research the entire hierarchy together.
+
+04. WDS:01198-0031:B
+Linked: AT40:101391, WDS 01198-0031 A; HD 8036.
+Trigger: system DM BD-1:171 -> HD 8036.
+Source: 7461 FIN 337 BC, rho=0.086, theta=45.90.
+Decision: PENDING
+Evidence:
+Notes:
+
+05. WDS:01277+4524:C
+Linked: AT40:110799, WDS 01277+4524 Aa; HD 8799.
+Trigger: system DM BD+44:307 -> HD 8799.
+Source: 8110 BU 82 CD, rho=4.804, theta=138.10.
+Decision: PENDING
+Evidence:
+Notes:
+
+06. WDS:01354+6305:B
+Linked: AT40:120335, WDS 01354+6305 A; HD 9546.
+Trigger: system DM BD+62:274 -> HD 9546.
+Source: 8678 MLB 280 BC, rho=6.633, theta=51.60.
+Decision: PENDING
+Evidence:
+Notes:
+
+07. WDS:01459+7142:C
+Linked: AT40:133626, WDS 01459+7142 B; HD 10563.
+Trigger: system DM BD+70:128 -> HD 10563.
+Source: 9632 HJ 1090 CD, rho=9.068, theta=335.20.
+Decision: PENDING
+Evidence:
+Notes:
+
+08. WDS:01516+5148:B
+Linked: AT40:140857, WDS 01516+5148 A; HD 11222.
+Trigger: system DM BD+51:418 -> HD 11222.
+Source: 10136 ES 762 BC, rho=3.242, theta=264.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+09. WDS:02022-2402:Ba
+Linked: AT40:154392, WDS 02022-2402 A; HD 12515.
+Trigger: system DM CD-24:867 -> HD 12515.
+Source: 11044 TOK 41 Ba,Bb, rho=0.107, theta=129.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+10. WDS:02181+5731:B
+Linked: AT40:174560, WDS 02181+5731 A; HD 13994.
+Trigger: system DM BD+56:486 -> HD 13994.
+Source: 12229 BU 1170 BC, rho=0.467, theta=307.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+11. WDS:02193-0259:B
+Linked: AT40:176132, WDS 02193-0259 Aa; HD 14386.
+Trigger: system DM BD-3:353 -> HD 14386.
+Source: 12313 H 6 1 BC, rho=50.300, theta=68.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+12. WDS:03082+4057:D
+Linked: AT40:234034, WDS 03082+4057 Aa1; HD 19356.
+Trigger: system DM BD+40:673 -> HD 19356.
+Source: 16342 BU 526 DE, rho=10.910, theta=121.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+13. WDS:03480+6840:B
+Linked: AT40:278247, WDS 03480+6840 A; HD 23189.
+Trigger: system DM BD+68:278 -> HD 23189.
+Source: 19452 KUI 13 BC, rho=0.627, theta=174.00; 19453 WNO 16 BD, rho=15.344, theta=325.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+14. WDS:03510+2939:B
+Linked: AT40:281684, WDS 03510+2939 A; HD 24052.
+Trigger: system DM BD+29:635 -> HD 24052.
+Source: 19739 STF 459 BC, rho=53.520, theta=293.90.
+Decision: PENDING
+Evidence:
+Notes:
+
+15. WDS:03512-1855:B
+Linked: AT40:281935, WDS 03512-1855 A; HD 24280.
+Trigger: system DM BD-19:756 -> HD 24280.
+Source: 19753 B 684 BC, rho=0.430, theta=133.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+16. WDS:04192+6135:B
+Linked: AT40:315183, WDS 04192+6135 A; HD 26936.
+Trigger: system DM BD+61:694 -> HD 26936.
+Source: 21954 BU 1333 BC, rho=0.223, theta=37.60.
+Decision: PENDING
+Evidence:
+Notes:
+
+17. WDS:04320+5355:B
+Linked: AT40:330401, WDS 04320+5355 Aa; HD 28446.
+Trigger: system DM BD+53:779 -> HD 28446.
+Source: 23114 STF 550 BC, rho=150.875, theta=216.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+18. WDS:04375+1418:C
+Linked: AT40:336837, WDS 04375+1418 A; HIP 21542.
+Trigger: hds.txt entry HDS597 links first endpoint C to HIP 21542.
+Source: 23619 HDS 597 CD, rho=5.592, theta=31.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+19. WDS:04376+6258:B
+Linked: AT40:336875, WDS 04376+6258 A; HD 28924.
+Trigger: system DM BD+62:692 -> HD 28924.
+Source: 23624 HU 1083 BC, rho=0.370, theta=118.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+20. WDS:05145-0812:B
+Linked: AT40:390195, WDS 05145-0812 A; HD 34085.
+Trigger: system DM BD-8:1063 -> HD 34085.
+Source: 27060 BU 555 BC, rho=0.124, theta=29.80.
+Decision: PENDING
+Evidence:
+Notes:
+
+21. WDS:05354-0525:Ca
+Linked: AT40:427407, WDS 05355-0525 A; HD 37062.
+Trigger: system DM BD-5:1326 -> HD 37062.
+Source: 30763 GVT 2 Ca,Cb, rho=0.038, theta=285.50.
+Decision: PENDING
+Evidence:
+Notes: Cross-system link; determine whether this is a genuine shared star.
+
+22. WDS:06005-2753:Ba
+Linked: AT40:476675, WDS 06005-2753 A; HIP 28457.
+Trigger: hds.txt entry HDS819 links first endpoint Ba to HIP 28457.
+Source: 34172 HDS 819 Ba,Bb, rho=0.081, theta=113.30.
+Decision: PENDING
+Evidence:
+Notes:
+
+23. WDS:06065+1045:B
+Linked: AT40:490209, WDS 06065+1045 A; HD 41580.
+Trigger: system DM BD+10:1004 -> HD 41580.
+Source: 34914 STF 840 BC, rho=0.259, theta=91.70.
+Decision: PENDING
+Evidence:
+Notes:
+
+24. WDS:06234+1432:C
+Linked: AT40:531575, WDS 06234+1432 B; HD 256320.
+Trigger: system DM BD+14:1268 -> HD 256320.
+Source: 37314 J 1254 CD, rho=5.046, theta=326.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+25. WDS:06300+1754:Ba
+Linked: AT40:547407, WDS 06300+1754 A; HD 45757.
+Trigger: system DM BD+17:1268 -> HD 45757.
+Source: 38216 OCC 557 Ba,Bb, rho=0.052, theta=-1.00 (unknown).
+Decision: PENDING
+Evidence:
+Notes:
+
+26. WDS:06467+0822:B
+Linked: AT40:591291, WDS 06467+0822 A; HIP 32475.
+Trigger: hds.txt entry HDS940 links first endpoint B to HIP 32475.
+Source: 41249 HDS 940 BC, rho=0.077, theta=280.30.
+Decision: PENDING
+Evidence:
+Notes:
+
+27. WDS:06577+1935:C
+Linked: AT40:624007, WDS 06577+1935 A; HD 266945.
+Trigger: system DM BD+19:1553 -> HD 266945.
+Source: 42984 A 2459 CD, rho=4.358, theta=20.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+28. WDS:07366-1429:A
+Linked: AT40:743186, WDS 07366-1429 B; HD 60997.
+Trigger: system DM BD-14:2020 -> HD 60997.
+Source: 49279 STF1121 AB, rho=7.439, theta=305.00; 49280 STF1121 AC, rho=17.908, theta=133.40.
+Decision: PENDING
+Evidence:
+Notes: Disputed endpoint is the primary; inspect ALL source rows 49279-49290,
+       including AD/AE/AF/AG/AH/AI/AJ/AR/AS/AT. Whole-system loss is possible.
+
+29. WDS:07448+1954:A
+Linked: AT40:765921, WDS 07448+1954 B; HD 62320.
+Trigger: system DM BD+20:1889 -> HD 62320.
+Source: Search every precise row for 07448+1954, including blended A endpoints.
+Decision: PENDING
+Evidence:
+Notes: Disputed endpoint is the primary; check whole-system effects.
+
+30. WDS:08080+4611:A
+Linked: AT40:830682, WDS 08080+4611 B; HD 67007.
+Trigger: system DM BD+46:1356 -> HD 67007.
+Source: 53305 ES 1144 AB, rho=6.780, theta=336.80; 53306 SIN 36 AC, rho=72.066, theta=337.00; 53307 SIN 36 AD, rho=126.010, theta=19.40.
+Decision: PENDING
+Evidence:
+Notes: Disputed endpoint is the primary; check whole-system effects.
+
+31. WDS:08250-4246:Ba
+Linked: AT40:872591, WDS 08250-4246 A; HD 71302.
+Trigger: system DM CD-42:4219 -> HD 71302.
+Source: 55410 CHR 226 Ba,Bb, rho=0.050, theta=86.90.
+Decision: PENDING
+Evidence:
+Notes:
+
+32. WDS:08321-2730:B
+Linked: AT40:888806, WDS 08321-2730 A; HIP 41860.
+Trigger: hds.txt entry HDS1220 links first endpoint B to HIP 41860.
+Source: 56192 HDS1220 BC, rho=0.052, theta=214.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+33. WDS:10040-1806:B
+Linked: AT40:1058564, WDS 10040-1806 C; HD 87330.
+Trigger: system DM BD-17:3046 -> HD 87330.
+Source: 65514 BU 1072 BC, rho=32.009, theta=258.70.
+Decision: PENDING
+Evidence:
+Notes:
+
+34. WDS:10111-7227:B
+Linked: AT40:1070907, WDS 10111-7227 A; HIP 49879.
+Trigger: hds.txt entry HDS1468 links first endpoint B to HIP 49879.
+Source: 66232 HDS1468 BC, rho=0.046, theta=140.10.
+Decision: PENDING
+Evidence:
+Notes:
+
+35. WDS:10439-5933:Aa
+Linked: AT40:1126402, WDS 10440-5933 Aa; HD 93128.
+Trigger: system DM CP-58:2617 -> HD 93128.
+Source: 69529 VSP 60 Aa,Ab, rho=0.926, theta=319.00; 69530 VSP 60 Aa,Ac, rho=1.286, theta=182.90.
+Decision: PENDING
+Evidence:
+Notes: Cross-system link involving the primary; check alias/whole-system effects.
+
+36. WDS:10438-6005:A
+Linked: AT40:1126404, WDS 10440-6005 D; HD 93097.
+Trigger: system DM CP-59:2540 -> HD 93097.
+Source: Search every precise row for 10438-6005, including blended A endpoints.
+Decision: PENDING
+Evidence:
+Notes: Cross-system link involving the primary; check alias/whole-system effects.
+
+37. WDS:11047-0413:B
+Linked: AT40:1159084, WDS 11047-0413 A; HD 96064.
+Trigger: system DM BD-3:3040 -> HD 96064.
+Source: 71536 A 676 BC, rho=0.267, theta=283.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+38. WDS:11321-0332:B
+Linked: AT40:1197899, WDS 11321-0332 A; HD 100245.
+Trigger: system DM BD-2:3364 -> HD 100245.
+Source: 73920 RST4480 BC, rho=0.518, theta=314.90.
+Decision: PENDING
+Evidence:
+Notes:
+
+39. WDS:11545-6301:C
+Linked: AT40:1228866, WDS 11545-6301 A; HD 103442.
+Trigger: system DM CP-62:2406 -> HD 103442.
+Source: 75753 TRR 9 CD, rho=3.626, theta=51.30.
+Decision: PENDING
+Evidence:
+Notes:
+
+40. WDS:12059+2628:Ba
+Linked: AT40:1244982, WDS 12059+2628 A; HIP 59004.
+Trigger: hds.txt entry HDS1707 links first endpoint Ba to HIP 59004.
+Source: 76708 HDS1707 Ba,Bb, rho=0.050, theta=144.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+41. WDS:12383-1131:C
+Linked: AT40:1287872, WDS 12383-1131 A; HD 109875.
+Trigger: system DM BD-10:3512 -> HD 109875.
+Source: 79379 STF1664 CD, rho=30.000, theta=258.10.
+Decision: PENDING
+Evidence:
+Notes:
+
+42. WDS:13133-0756:Ba
+Linked: AT40:1332929, WDS 13133-0756 A; HIP 64505.
+Trigger: hds.txt entry HDS1851 links first endpoint Ba to HIP 64505.
+Source: 82245 HDS1851 Ba,Bb, rho=0.044, theta=25.60.
+Decision: PENDING
+Evidence:
+Notes:
+
+43. WDS:14153-3508:A
+Linked: AT40:1420358, WDS 14153-3508 C; HD 124578.
+Trigger: system DM CD-34:9476 -> HD 124578.
+Source: 87438 B 2331 AB, rho=10.543, theta=206.10; 87439 SKF1964 AC, rho=111.278, theta=300.00.
+Decision: PENDING
+Evidence:
+Notes: Disputed endpoint is the primary; check whole-system effects.
+
+44. WDS:14333-2707:Ba
+Linked: AT40:1445916, WDS 14333-2707 A; HIP 71164.
+Trigger: hds.txt entry HDS2056 links first endpoint Ba to HIP 71164.
+Source: 88881 HDS2056 Ba,Bb, rho=0.033, theta=54.30.
+Decision: PENDING
+Evidence:
+Notes:
+
+45. WDS:14405-4240:B
+Linked: AT40:1456280, WDS 14405-4240 A; HD 128833.
+Trigger: system DM CD-42:9539 -> HD 128833.
+Source: 89377 I 1249 BC, rho=0.470, theta=67.70.
+Decision: PENDING
+Evidence:
+Notes:
+
+46. WDS:14494-5726:B
+Linked: AT40:1468853, WDS 14494-5726 A; HIP 72492.
+Trigger: hds.txt entry HDS2092 links first endpoint B to HIP 72492.
+Source: 90074 HDS2092 BC, rho=0.041, theta=117.40.
+Decision: PENDING
+Evidence:
+Notes:
+
+47. WDS:15162-3035:A
+Linked: AT40:1506934, WDS 15162-3035 C; HD 135445.
+Trigger: system DM CD-30:12075 -> HD 135445.
+Source: 92149 SEE 223 AB, rho=12.254, theta=273.60; 92150 SEE 223 AC, rho=35.067, theta=37.60.
+Decision: PENDING
+Evidence:
+Notes: Disputed endpoint is the primary; check whole-system effects.
+
+48. WDS:16200-5942:B
+Linked: AT40:1608191, WDS 16200-5942 A; HD 146504.
+Trigger: system DM CP-59:6694 -> HD 146504.
+Source: 97737 JSP 690 BC, rho=1.297, theta=182.20.
+Decision: PENDING
+Evidence:
+Notes:
+
+49. WDS:16571-1932:Ba
+Linked: AT40:1671445, WDS 16571-1932 A; HD 152909.
+Trigger: system DM BD-19:4471 -> HD 152909.
+Source: 101108 OCC 940 Ba,Bb, rho=0.017, theta=-1.00 (unknown).
+Decision: PENDING
+Evidence:
+Notes:
+
+50. WDS:17348-7034:B
+Linked: AT40:1743453, WDS 17348-7034 A; HD 158313.
+Trigger: system DM CP-70:2388 -> HD 158313.
+Source: 104583 HEI 248 BC, rho=1.319, theta=260.50.
+Decision: PENDING
+Evidence:
+Notes:
+
+51. WDS:20073+3534:C
+Linked: AT40:2141006, WDS 20073+3534 Aa; HD 227758.
+Trigger: system DM BD+35:3968 -> HD 227758.
+Source: 130262 SEI 893 CD, rho=27.418, theta=119.10.
+Decision: PENDING
+Evidence:
+Notes:
+
+52. WDS:20393-1457:Ba
+Linked: AT40:2221543, WDS 20393-1457 A; HD 196662.
+Trigger: system DM BD-15:5743 -> HD 196662.
+Source: 136365 OCC 226 Ba,Bb, rho=0.055, theta=-1.00 (unknown).
+Decision: PENDING
+Evidence:
+Notes:
+
+53. WDS:20396+1555:Ab1
+Linked: AT40:2222353, WDS 20396+1555 Aa; HD 196867.
+Trigger: system DM BD+15:4222 -> HD 196867.
+Source: 136410 CIA 23 Ab1,2, rho=0.003, theta=249.70.
+Decision: PENDING
+Evidence:
+Notes:
+
+54. WDS:21055+6210:B
+Linked: AT40:2279171, WDS 21055+6210 A; HD 201267.
+Trigger: system DM BD+61:2092 -> HD 201267.
+Source: 139866 HU 765 BC, rho=0.830, theta=26.80.
+Decision: PENDING
+Evidence:
+Notes:
+
+55. WDS:21433-4327:Ba
+Linked: AT40:2351205, WDS 21433-4327 A; HIP 107240.
+Trigger: hds.txt entry HDS3095 links first endpoint Ba to HIP 107240.
+Source: 144382 HDS3095 Ba,Bb, rho=0.100, theta=308.60.
+Decision: PENDING
+Evidence:
+Notes:
+
+56. WDS:22538-3559:Ba
+Linked: AT40:2469267, WDS 22538-3559 A; HIP 113058.
+Trigger: hds.txt entry HDS3255 links first endpoint Ba to HIP 113058.
+Source: 151867 HDS3255 Ba,Bb, rho=0.196, theta=116.20.
+Decision: PENDING
+Evidence:
+Notes:
+
+57. WDS:23160-8122:Ba
+Linked: AT40:2500908, WDS 23160-8122 Aa; HIP 114859.
+Trigger: hds.txt entry HDS3313 links first endpoint Ba to HIP 114859.
+Source: 153942 HDS3313 Ba,Bb, rho=0.070, theta=290.00.
+Decision: PENDING
+Evidence:
+Notes:
+
+58. WDS:23393+4543:Ba
+Linked: AT40:2531043, WDS 23393+4543 A; HD 222326.
+Trigger: system DM BD+44:4464 -> HD 222326.
+Source: 156126 CHR 149 Ba,Bb, rho=0.069, theta=88.60.
+Decision: PENDING
+Evidence:
+Notes:
+
+59. WDS:23509+4730:B
+Linked: AT40:2546327, WDS 23509+4730 A; HD 223608.
+Trigger: system DM BD+46:4187 -> HD 223608.
+Source: 157180 A 794 BC, rho=0.780, theta=10.20.
+Decision: PENDING
+Evidence:
+Notes:

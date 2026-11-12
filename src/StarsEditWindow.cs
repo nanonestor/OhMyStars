@@ -1853,7 +1853,7 @@ internal static partial class StarsEditWindow
 	}
 
 	// Bump when the curated generation settings change so existing curated files are rebuilt.
-	private const string CuratedBinaryVersion = "8-almach-anchor-fix";
+	private const string CuratedBinaryVersion = "10-reviewed-systems-capella";
 
 	// Generates the bundled curated binary (plus its identity sister file) in the mod's binaries folder if missing or outdated.
 	private static void EnsureCuratedBinaryExists()

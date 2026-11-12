@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gameplay data for the Hubble optical tube part. The generated
+     HubbleTubeAssets.xml (see parts/hubble/README.md) must load first. -->
+<Assets>
+  <KeyframeAnimation Id="HubbleTube_Prefab_MainTube_Anim" Path="Animations/HubbleTube_Prefab_MainTube_Anim.glb" />
+  <Part Id="HubbleTube_Prefab_MainTube" Modify="Patch" DisplayName="OMS Optical Tube Assembly">
+    <EditorTags Modify="Extend">
+      <EditorTag Ref="Structural" />
+    </EditorTags>
+    <Diameters Modify="Extend">
+      <Diameter M="4.2" />
+    </Diameters>
+    <InertMasses Modify="Extend">
+      <!-- Tube structure of a Hubble-class telescope; the whole observatory
+           is ~11,100 kg including instruments and appendages. Inertia is a
+           hollow-cylinder approximation: Ixx ~ r^2, Iyy = Izz ~ r^2/2 + L^2/12
+           with r ~ 1.8 m, L ~ 13.2 m. -->
+      <CustomMass>
+        <Mass Kg="9000" />
+        <MassSpecificInertia Ixx="3.2" Iyy="16.1" Izz="16.1" />
+      </CustomMass>
+    </InertMasses>
+    <Components Modify="Extend">
+      <!-- 528 Ah at the 28 V bus = 528 * 28 * 3600 J -->
+      <Battery>
+        <MaximumCapacity J="5.32224E+07" />
+      </Battery>
+      <!-- Telescope operating draw; switched like the stock light parts.
+           The Oh My Stars mod toggles this from its Telescope tab. -->
+      <PowerConsumer LightSwitch="true">
+        <Consumed W="2100" />
+      </PowerConsumer>
+      <!-- Aperture door: closed when retracted (time 0), swings open like
+           the stock solar panel deploy. Driven by the Telescope tab and the
+           part's Deploy/Retract context menu. -->
+      <KeyframeAnimationModule Key="DoorAnimation" ShowDeployRetract="true">
+        <KeyframeAnimation Ref="HubbleTube_Prefab_MainTube_Anim" />
+      </KeyframeAnimationModule>
+    </Components>
+  </Part>
+</Assets>

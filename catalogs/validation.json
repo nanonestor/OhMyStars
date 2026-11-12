@@ -1,25 +1,29 @@
 {
   "status": "passed_structural_and_source_precedence_checks",
-  "rows": 378699,
+  "rows": 378695,
   "athyg_rows_verified": 338817,
   "base_athyg_rows_verified": 329571,
-  "original_nonempty_athyg_fields_preserved": true,
-  "added_ids_on_athyg_rows": 315,
-  "identifier_additions": 330,
-  "wds_only_rows": 39882,
-  "unknown_position_rows": 23852,
-  "pair_measurements": 52583,
+  "original_nonempty_athyg_fields_preserved_except_missing_spectral_metadata": true,
+  "added_ids_on_athyg_rows": 314,
+  "spectral_provenance_updated_only_for_missing_spectra": true,
+  "wds_spectral_classifications": 5639,
+  "wds_spectral_filled_athyg": 2975,
+  "identifier_additions": 329,
+  "wds_only_rows": 39878,
+  "unknown_position_rows": 23848,
+  "pair_measurements": 52579,
   "bds_identified_systems": 10029,
   "roles": {
-    "S": 289931,
+    "S": 289929,
     "P": 36995,
-    "C": 45949,
-    "V": 4685,
-    "Q": 1097,
-    "U": 42
+    "C": 45372,
+    "V": 5508,
+    "Q": 626,
+    "U": 265
   },
   "review_rows": 15,
-  "catalog_sha256": "E051082A3E3522EC829D7788C635C0C422CD8E28167180AB120D5E2780B49FDA",
+  "catalog_sha256": "71C72BA6FDC02241C958FA4F7746ECF08E8904E3C816CF71B2BEF8C3A11D5001",
   "shared_gaia_ids_allowed": true,
-  "scientific_identity_review_required": true
+  "scientific_identity_review_required": true,
+  "definitively_correct_systems": 7883
 }

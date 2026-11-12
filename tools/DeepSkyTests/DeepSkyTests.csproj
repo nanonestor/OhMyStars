@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\DeepSkyCatalog.cs" Link="DeepSkyCatalog.cs" />
+    <Compile Include="..\..\src\DeepSkySettings.cs" Link="DeepSkySettings.cs" />
+    <Compile Include="..\..\src\DeepSkyVisibilityCache.cs" Link="DeepSkyVisibilityCache.cs" />
+    <Compile Include="..\..\src\DeepSkyOutlines.cs" Link="DeepSkyOutlines.cs" />
+    <Compile Include="..\..\src\DeepSkyOutlineGeometry.cs" Link="DeepSkyOutlineGeometry.cs" />
+    <None Include="..\..\catalogs\OpenNGC\database_files\*.csv" Link="catalogs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\catalogs\OpenNGC\outlines\outlines_stellarium.dat" Link="catalogs\outlines_stellarium.dat" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

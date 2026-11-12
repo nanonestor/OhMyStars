@@ -59,6 +59,7 @@ public class OhMyStarsEntryPoint {
 
     [StarMapBeforeGui]
     public static void OnBeforeGui(double dt) {
+        TelescopeView.Update();
         StarsEditWindow.Update();
         OhMyStarsWindow.Draw();
         StarsEditWindow.Draw();
@@ -68,5 +69,6 @@ public class OhMyStarsEntryPoint {
     [StarMapAfterGui]
     public static void OnAfterUi(double dt) {
         StellariumRenderer.Draw();
+        TelescopeView.DrawViewportOverlay();
     }
 }
